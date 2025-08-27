@@ -1,21 +1,17 @@
 from typing import Dict, Any, Optional
 import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions # Import để bắt lỗi cụ thể
 
 # Import các module cốt lõi của hệ thống
-from search_core.task_analyzer import TaskType, analyze_query_gemini, analyze_query_heuristic
-from search_core.semantic_searcher import SemanticSearcher
-from search_core.vqa_handler import VQAHandler
-from search_core.trake_solver import TRAKESolver
+from .task_analyzer import TaskType, analyze_query_gemini, analyze_query_heuristic
+from .semantic_searcher import SemanticSearcher
+from .vqa_handler import VQAHandler
+from .trake_solver import TRAKESolver
+from ..utils import gemini_api_retrier # Import retrier
+
 class MasterSearcher:
     """
-    Lớp điều phối chính của hệ thống tìm kiếm, hoạt động như một Facade.
-
-    Đây là entry point duy nhất cho tất cả các truy vấn. Nó có trách nhiệm:
-    1.  Khởi tạo và quản lý các handler chuyên biệt (Semantic, VQA, TRAKE).
-    2.  Phân tích loại truy vấn của người dùng.
-    3.  Điều phối truy vấn đến handler phù hợp để xử lý.
-    4.  Thực hiện các logic nghiệp vụ phức tạp như kết hợp kết quả, cập nhật điểm số.
-    5.  Trả về một kết quả có cấu trúc, sẵn sàng cho giao diện người dùng.
+    Lớp điều phối chính của hệ thống tìm kiếm.
     """
 
     def __init__(self, 
@@ -23,11 +19,6 @@ class MasterSearcher:
                  gemini_api_key: Optional[str] = None):
         """
         Khởi tạo MasterSearcher và tất cả các thành phần con của nó.
-
-        Args:
-            semantic_searcher (SemanticSearcher): Một instance của SemanticSearcher đã được khởi tạo.
-            gemini_api_key (Optional[str]): API key cho Google Gemini. Nếu được cung cấp,
-                                            các tính năng AI nâng cao sẽ được kích hoạt.
         """
         print("--- 🧠 Khởi tạo Master Searcher ---")
         
@@ -35,25 +26,60 @@ class MasterSearcher:
         self.gemini_model: Optional[genai.GenerativeModel] = None
         self.vqa_handler: Optional[VQAHandler] = None
         self.trake_solver: Optional[TRAKESolver] = None
-        self.ai_enabled = False
+        self.ai_enabled = False # Mặc định là False
 
         if gemini_api_key:
             try:
                 genai.configure(api_key=gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
                 
-                self.semantic_searcher.gemini_model = self.gemini_model
-                self.vqa_handler = VQAHandler(model=self.gemini_model)
-                self.trake_solver = TRAKESolver(gemini_model=self.gemini_model)
-                
-                print("--- ✅ Gemini và các AI Handler đã được khởi tạo thành công! ---")
-                self.ai_enabled = True
+                # --- THÊM BƯỚC KIỂM TRA API HEALTH ---
+                if self._check_api_health():
+                    # Chỉ khởi tạo các handler con nếu API hoạt động
+                    self.semantic_searcher.gemini_model = self.gemini_model
+                    self.vqa_handler = VQAHandler(model=self.gemini_model)
+                    self.trake_solver = TRAKESolver(gemini_model=self.gemini_model)
+                    self.ai_enabled = True
+                    print("--- ✅ Gemini và các AI Handler đã được khởi tạo và xác thực thành công! ---")
+                else:
+                    # Nếu health check thất bại, vô hiệu hóa các tính năng AI
+                    print("--- ❌ Kiểm tra API thất bại. Các tính năng AI sẽ bị vô hiệu hóa. ---")
+                    self.ai_enabled = False # Đảm bảo vẫn là False
             except Exception as e:
                 print(f"--- ⚠️ Lỗi khi khởi tạo Gemini: {e}. AI Handler sẽ bị vô hiệu hóa. ---")
+                self.ai_enabled = False
         else:
             print("--- ⚠️ Không có API Key. AI Handler (Q&A, TRAKE) sẽ bị vô hiệu hóa. ---")
+            self.ai_enabled = False
             
-        print("--- ✅ Master Searcher đã sẵn sàng! ---")
+        print(f"--- ✅ Master Searcher đã sẵn sàng! (AI Enabled: {self.ai_enabled}) ---")
+
+    # --- HÀM MỚI ---
+    @gemini_api_retrier(max_retries=2, initial_delay=1) # Thử lại 2 lần nếu có lỗi mạng tạm thời
+    def _check_api_health(self) -> bool:
+        """
+        Thực hiện một lệnh gọi API đơn giản để kiểm tra xem API key có hợp lệ và hoạt động không.
+        
+        Sử dụng count_tokens, một API call nhẹ và rẻ.
+
+        Returns:
+            bool: True nếu API hoạt động, False nếu không.
+        """
+        print("--- 🩺 Đang thực hiện kiểm tra trạng thái API Gemini... ---")
+        try:
+            # count_tokens là một lệnh gọi API nhẹ nhàng nhất
+            self.gemini_model.count_tokens("kiểm tra")
+            print("--- ✅ Trạng thái API: OK ---")
+            return True
+        except google_exceptions.PermissionDenied as e:
+            # Lỗi này đặc trưng cho API key sai hoặc không có quyền truy cập model
+            print(f"--- ❌ Lỗi API: Permission Denied. API Key có thể không hợp lệ. Lỗi: {e} ---")
+            return False
+        except Exception as e:
+            # Bắt các lỗi khác (mạng, etc.)
+            print(f"--- ❌ Lỗi API: Không thể kết nối đến Gemini. Lỗi: {e} ---")
+            return False
+
 
     def search(self, query: str, top_k: int = 100) -> Dict[str, Any]:
         """

@@ -42,7 +42,7 @@ class VQAHandler:
     def __init__(
         self,
         model: Optional[genai.GenerativeModel] = None,
-        model_name: str = "gemini-1.5-flash",
+        model_name: str = "gemini-2.5-flash",
         rpm_limit: int = 12,
         max_retries: int = 3,
     ):

@@ -43,7 +43,6 @@ RERANK_METADATA_PATH = '/kaggle/input/stage1/rerank_metadata.parquet'
 VIDEO_BASE_PATH = "/kaggle/input/aic2025-batch-1-video/"
 ALL_ENTITIES_PATH = "/kaggle/input/stage1/all_detection_entities.json"
 
-@gr.cache
 def get_master_searcher():
     """
     Hàm khởi tạo singleton cho toàn bộ backend.

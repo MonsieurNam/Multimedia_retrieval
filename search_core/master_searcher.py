@@ -115,7 +115,7 @@ class MasterSearcher:
             
             candidates = self.semantic_searcher.search(
                 query_text=search_context, 
-                top_k_final=top_k if task_type == TaskType.KIS else 5,
+                top_k_final=top_k if task_type == TaskType.KIS else 10,
                 top_k_retrieval=200,
                 precomputed_analysis=query_analysis
             )

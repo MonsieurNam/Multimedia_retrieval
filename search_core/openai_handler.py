@@ -70,7 +70,7 @@ class OpenAIHandler:
         """
         fallback_result = {'search_context': query, 'specific_question': "", 'objects_vi': [], 'objects_en': []}
         prompt = f"""
-        Analyze a Vietnamese user query for a video search system. Return ONLY a valid JSON object with: "search_context", "specific_question", "objects_vi", and "objects_en".
+        Analyze a Vietnamese user query for a video search system. **Return ONLY a valid JSON object** with: "search_context", "specific_question", "objects_vi", and "objects_en".
 
         Rules:
         - "search_context": A Vietnamese phrase for finding the scene.
@@ -164,7 +164,15 @@ class OpenAIHandler:
         if not base64_image:
             return {"answer": "Lỗi: Không thể xử lý ảnh", "confidence": 0.0}
 
-        prompt = f"""...""" # Prompt VQA giữ nguyên
+        prompt = f"""
+        You are a Visual Question Answering assistant. Based on the provided image, answer the user's question.
+        
+        **Your task is to return ONLY a valid JSON object** with two keys: "answer" and "confidence".
+        - "answer": A short, direct answer in Vietnamese.
+        - "confidence": Your confidence in the answer, from 0.0 (very unsure) to 1.0 (certain).
+
+        **User's Question:** "{question}"
+        """
         
         messages = [
             {
@@ -181,8 +189,6 @@ class OpenAIHandler:
         try:
             response_content = self._openai_chat_completion(messages, is_json=True, is_vision=True)
             
-            # --- THÊM KIỂM TRA TẠI ĐÂY ---
-            # Nếu _openai_chat_completion trả về chuỗi rỗng do lỗi hoặc API không trả lời
             if not response_content:
                 print("--- ⚠️ OpenAI VQA không trả về nội dung. ---")
                 return {"answer": "Không thể phân tích hình ảnh", "confidence": 0.1}

@@ -1,5 +1,3 @@
-# /kaggle/working/search_core/semantic_searcher.py
-
 import pandas as pd
 import faiss
 from sentence_transformers import SentenceTransformer, util
@@ -11,11 +9,11 @@ from tqdm import tqdm
 from typing import Dict, List, Optional, Any
 
 # Import BasicSearcher để sử dụng làm nền tảng
-from .basic_searcher import BasicSearcher
+from search_core.basic_searcher import BasicSearcher
 
 # Import thư viện Gemini và decorator retrier
 import google.generativeai as genai
-from ..utils import gemini_api_retrier
+from utils import gemini_api_retrier
 
 class SemanticSearcher:
     """

@@ -56,31 +56,28 @@ class MasterSearcher:
             
         print(f"--- ✅ Master Searcher đã sẵn sàng! (AI Enabled: {self.ai_enabled}) ---")
 
-    def search(self, query: str,  config: Dict[str, Any]) -> Dict[str, Any]:
+    def search(self, query: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Hàm tìm kiếm chính, điều phối toàn bộ pipeline sử dụng OpenAIHandler.
+        Hàm tìm kiếm chính, nhận một dictionary config để tùy chỉnh hành vi.
+        *** PHIÊN BẢN HOÀN THIỆN: Sửa lỗi NameError và tái cấu trúc logic. ***
         """
-        query_analysis = {}
+        # --- Bước 1: Giải nén các tham số từ dictionary config ---
+        # Cung cấp các giá trị mặc định an toàn nếu key không tồn tại
         top_k_final = config.get('top_k_final', 12)
-    
-        # KIS config
         kis_retrieval = config.get('kis_retrieval', 100)
-        
-        # VQA config
         vqa_candidates = config.get('vqa_candidates', 8)
         vqa_retrieval = config.get('vqa_retrieval', 200)
-
-        # TRAKE config
         trake_candidates_per_step = config.get('trake_candidates_per_step', 15)
         trake_max_sequences = config.get('trake_max_sequences', 50)
+        
+        # --- Bước 2: Phân tích truy vấn bằng AI ---
+        query_analysis = {}
         task_type = TaskType.KIS # Mặc định
 
         if self.ai_enabled:
             print("--- 🤖 Bắt đầu phân tích truy vấn bằng OpenAI... ---")
             query_analysis = self.openai_handler.enhance_query(query)
             task_type_str = self.openai_handler.analyze_task_type(query)
-            
-            # Chuyển đổi string trả về từ API thành Enum
             try:
                 task_type = TaskType[task_type_str]
             except KeyError:
@@ -90,19 +87,31 @@ class MasterSearcher:
         print(f"--- Đã phân loại truy vấn là: {task_type.value} ---")
 
         final_results = []
-        search_context = query_analysis.get('search_context', query)
         
-        # --- Điều phối dựa trên loại nhiệm vụ ---
+        # --- Bước 3: Điều phối đến handler phù hợp ---
+
         if task_type == TaskType.TRAKE:
             if self.trake_solver:
                 sub_queries = self.trake_solver.decompose_query(query)
-                final_results = self.trake_solver.find_sequences(sub_queries, self.semantic_searcher, max_sequences=top_k)
+                final_results = self.trake_solver.find_sequences(
+                    sub_queries, 
+                    self.semantic_searcher, 
+                    top_k_per_step=trake_candidates_per_step,
+                    max_sequences=trake_max_sequences
+                )
             else:
-                 final_results = self.semantic_searcher.search(search_context, top_k_final=top_k, precomputed_analysis=query_analysis)
-
-        elif task_type == TaskType.QNA:
-            # Tìm ứng viên bối cảnh
-            candidates = self.semantic_searcher.search(search_context, top_k_final=8, top_k_retrieval=200, precomputed_analysis=query_analysis)
+                print("--- ⚠️ TRAKE handler chưa được kích hoạt. Fallback về tìm kiếm KIS. ---")
+                task_type = TaskType.KIS # Chuyển task để khối logic tiếp theo xử lý
+        
+        # Khối này xử lý KIS, QNA, và cả fallback từ TRAKE
+        if task_type == TaskType.QNA:
+            search_context = query_analysis.get('search_context', query)
+            candidates = self.semantic_searcher.search(
+                query_text=search_context,
+                precomputed_analysis=query_analysis,
+                top_k_final=vqa_candidates,
+                top_k_retrieval=vqa_retrieval
+            )
             
             specific_question = query_analysis.get('specific_question', query)
             vqa_enhanced_candidates = []
@@ -119,16 +128,22 @@ class MasterSearcher:
                 new_cand['final_score'] = final_vqa_score
                 new_cand['scores']['search_score'] = search_score
                 new_cand['scores']['vqa_confidence'] = vqa_confidence
-                
                 vqa_enhanced_candidates.append(new_cand)
             
             final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
 
-        else: # TaskType.KIS
-            final_results = self.semantic_searcher.search(search_context, top_k_final=top_k_final, precomputed_analysis=query_analysis)
+        elif task_type == TaskType.KIS: # Chỉ chạy nếu task là KIS (hoặc fallback từ TRAKE)
+            search_context = query_analysis.get('search_context', query)
+            final_results = self.semantic_searcher.search(
+                query_text=search_context,
+                precomputed_analysis=query_analysis,
+                top_k_final=top_k_final, 
+                top_k_retrieval=kis_retrieval
+            )
 
+        # --- Bước 4: Trả về kết quả cuối cùng có cấu trúc ---
         return {
             "task_type": task_type,
-            "results": final_results[:top_k_final],
+            "results": final_results[:top_k_final], # Cắt theo top_k chung để hiển thị
             "query_analysis": query_analysis
         }

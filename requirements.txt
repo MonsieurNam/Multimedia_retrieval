@@ -1,0 +1,7 @@
+gradio 
+sentence_transformers 
+faiss-cpu 
+ffmpeg-python 
+pandas 
+yarrow 
+google-generativeai

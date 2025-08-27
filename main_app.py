@@ -1,28 +1,26 @@
-# /kaggle/working/main_app.py
-
-# ==============================================================================
-# === PHẦN 1: SETUP VÀ IMPORTS ===
-# ==============================================================================
 print("--- 🚀 Bắt đầu khởi chạy AIC25 Video Search Engine ---")
 print("--- Giai đoạn 1/4: Đang tải các thư viện cần thiết...")
 
+import sys
+import os
+
+project_root = os.path.dirname(os.path.abspath(__file__))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+    
 import gradio as gr
 import pandas as pd
-import os
 import glob
 import time
 import numpy as np
 from kaggle_secrets import UserSecretsClient
 from typing import Dict, Any
 
-# Import các module cốt lõi từ cấu trúc dự án của chúng ta
-# Giả sử cấu trúc thư mục đã được thiết lập đúng
 from search_core.basic_searcher import BasicSearcher
 from search_core.semantic_searcher import SemanticSearcher
 from search_core.master_searcher import MasterSearcher
 from search_core.task_analyzer import TaskType
 
-# Import các hàm tiện ích đã được đóng gói
 from utils import (
     create_video_segment,
     format_results_for_gallery,
@@ -30,12 +28,8 @@ from utils import (
     generate_submission_file
 )
 
-# ==============================================================================
-# === PHẦN 2: KHỞI TẠO BACKEND (SINGLETON PATTERN) ===
-# ==============================================================================
 print("--- Giai đoạn 2/4: Đang cấu hình và khởi tạo Backend...")
 
-# --- Cấu hình API Key ---
 try:
     user_secrets = UserSecretsClient()
     GOOGLE_API_KEY = user_secrets.get_secret("GOOGLE_API_KEY")
@@ -44,13 +38,11 @@ except Exception as e:
     GOOGLE_API_KEY = None
     print(f"--- ⚠️ Không tìm thấy Google API Key. Lỗi: {e} ---")
 
-# --- Đường dẫn Dữ liệu (Constants) ---
 FAISS_INDEX_PATH = '/kaggle/input/stage1/faiss.index'
 RERANK_METADATA_PATH = '/kaggle/input/stage1/rerank_metadata.parquet'
 VIDEO_BASE_PATH = "/kaggle/input/aic2025-batch-1-video/"
 ALL_ENTITIES_PATH = "/kaggle/input/stage1/all_detection_entities.json"
 
-# --- Sử dụng @gr.cache để đảm bảo model chỉ được load MỘT LẦN ---
 @gr.cache
 def get_master_searcher():
     """
@@ -61,18 +53,13 @@ def get_master_searcher():
     all_video_files = glob.glob(os.path.join(VIDEO_BASE_PATH, "**", "*.mp4"), recursive=True)
     video_path_map = {os.path.basename(f).replace('.mp4', ''): f for f in all_video_files}
 
-    # MasterSearcher sẽ tự quản lý việc khởi tạo các thành phần con
     basic_searcher = BasicSearcher(FAISS_INDEX_PATH, RERANK_METADATA_PATH, video_path_map)
     master_searcher = MasterSearcher(basic_searcher=basic_searcher, gemini_api_key=GOOGLE_API_KEY)
     
     return master_searcher
 
-# Load các model ngay khi app khởi động và lưu vào biến toàn cục
 master_searcher = get_master_searcher()
 
-# ==============================================================================
-# === PHẦN 3: CÁC HÀM LOGIC CHO GIAO DIỆN (UI LOGIC) ===
-# ==============================================================================
 print("--- Giai đoạn 3/4: Đang định nghĩa các hàm logic cho giao diện...")
 
 def perform_search(query_text: str, num_results: int):
@@ -85,15 +72,12 @@ def perform_search(query_text: str, num_results: int):
 
     start_time = time.time()
     
-    # Gọi hàm search chính của backend
     response = master_searcher.search(query=query_text, top_k=num_results)
     
     search_time = time.time() - start_time
     
-    # Định dạng kết quả cho gallery
     formatted_gallery = format_results_for_gallery(response)
     
-    # Lấy thông tin phân tích
     query_analysis = response.get('query_analysis', {})
     gemini_analysis_html = f"""
     <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); padding: 20px; border-radius: 12px; color: white; margin: 10px 0; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
@@ -114,7 +98,6 @@ def perform_search(query_text: str, num_results: int):
     </div>
     """
         
-    # Tạo thông tin thống kê
     stats_info_html =  f"""
     <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; color: white; margin: 10px 0;">
         <h3 style="margin: 0; color: white;">🔄 Đang xử lý truy vấn...</h3>
@@ -122,15 +105,104 @@ def perform_search(query_text: str, num_results: int):
     </div>
     """
     
-    # Tạo thông báo trạng thái
     task_type_msg = response.get('task_type', TaskType.KIS).value
     status_msg_html = f"✅ Tìm kiếm hoàn tất trong {search_time:.2f}s. Chế độ: {task_type_msg}"
     
     return formatted_gallery, status_msg_html, response, gemini_analysis_html, stats_info_html
 
-def on_gallery_select(evt: gr.SelectData, response_state: dict):
+def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> str:
     """
-    Xử lý khi người dùng chọn một ảnh trong gallery.
+    Hàm phụ trợ tạo mã HTML chi tiết cho một kết quả được chọn.
+    """
+    def create_progress_bar(score, color):
+        percentage = max(0, min(100, score * 100))
+        return f"""
+        <div style="background: #e0e0e0; border-radius: 10px; height: 8px; margin: 5px 0;">
+            <div style="background: {color}; width: {percentage}%; height: 100%; border-radius: 10px; transition: width 0.3s ease;"></div>
+        </div>
+        """
+
+    video_id = result.get('video_id', 'N/A')
+    keyframe_id = result.get('keyframe_id', 'N/A')
+    timestamp = result.get('timestamp', 0)
+    final_score = result.get('final_score', 0)
+    scores = result.get('scores', {})
+    
+    html = f"""
+    <div style="background: linear-gradient(135deg, #fd79a8 0%, #fdcb6e 100%); padding: 20px; border-radius: 12px; color: white;">
+        <h3 style="margin: 0; color: white;">🎬 Chi tiết Keyframe</h3>
+        
+        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 15px 0;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div><strong>📹 Video:</strong><br><code ...>{video_id}</code></div>
+                <div><strong>⏰ Thời điểm:</strong><br><code ...>{timestamp:.2f}s</code></div>
+            </div>
+        </div>
+    """
+
+    if task_type == TaskType.QNA:
+        answer = result.get('answer', 'N/A')
+        vqa_conf = scores.get('vqa_confidence', 0)
+        html += f"""
+        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 15px 0;">
+            <h4 style="margin: 0 0 10px 0; color: white;">💬 Câu trả lời (VQA)</h4>
+            <div style="font-size: 18px; font-weight: bold; margin-bottom: 5px;">{answer}</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 14px;">
+                <span>Độ tự tin:</span><span>{vqa_conf:.2f}</span>
+            </div>
+            {create_progress_bar(vqa_conf, '#8e44ad')}
+        </div>
+        """
+
+    html += f"""
+        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 15px 0;">
+            <h4 style="margin: 0 0 15px 0; color: white;">🏆 Điểm số chi tiết</h4>
+            <div style="margin: 10px 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span><strong>📊 Điểm tổng:</strong></span>
+                    <span style="font-weight: bold; font-size: 18px;">{final_score:.4f}</span>
+                </div>
+                {create_progress_bar(final_score, '#00b894')}
+            </div>
+            <div style="margin: 10px 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🖼️ CLIP Score:</span><span>{scores.get('clip', 0):.3f}</span>
+                </div>
+                {create_progress_bar(scores.get('clip', 0), '#0984e3')}
+            </div>
+            <div style="margin: 10px 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🎯 Object Score:</span><span>{scores.get('object', 0):.3f}</span>
+                </div>
+                {create_progress_bar(scores.get('object', 0), '#e17055')}
+            </div>
+            <div style="margin: 10px 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🧠 Semantic Score:</span><span>{scores.get('semantic', 0):.3f}</span>
+                </div>
+                {create_progress_bar(scores.get('semantic', 0), '#a29bfe')}
+            </div>
+        </div>
+    """
+
+    detected_objects = result.get('objects_detected', [])
+    objects_html = "".join([f'<span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 14px;">{obj}</span>' for obj in detected_objects])
+    html += f"""
+        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;">
+            <h4 style="margin: 0 0 10px 0; color: white;">🔍 Đối tượng phát hiện</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                {objects_html if objects_html else "Không có đối tượng nổi bật."}
+            </div>
+        </div>
+    </div>
+    """
+    return html
+
+
+def on_gallery_select(evt: gr.SelectData, response_state: Dict[str, Any]):
+    """
+    Hàm xử lý sự kiện khi người dùng chọn một ảnh trong gallery.
+    Hàm này được thiết kế để xử lý linh hoạt cả 3 loại nhiệm vụ.
     """
     if not response_state:
         gr.Warning("Vui lòng thực hiện tìm kiếm trước khi chọn ảnh.")
@@ -138,22 +210,55 @@ def on_gallery_select(evt: gr.SelectData, response_state: dict):
 
     task_type = response_state.get('task_type')
     results = response_state.get('results', [])
+    
+    if not results or evt.index >= len(results):
+        gr.Error("Lỗi: Không tìm thấy kết quả tương ứng. Vui lòng thử tìm kiếm lại.")
+        return None, "Lỗi: Dữ liệu không đồng bộ.", ""
+
     selected_result = results[evt.index]
 
     if task_type == TaskType.TRAKE:
-        # Xử lý hiển thị cho TRAKE (hiển thị tất cả các frame trong chuỗi)
-        # TODO: Implement a more sophisticated display for TRAKE sequences
-        first_frame = selected_result['sequence'][0]
-        video_path = first_frame.get('video_path')
-        timestamp = first_frame.get('timestamp')
-        detailed_info_html = "Đây là kết quả của một chuỗi hành động..."
-    else: # KIS và QNA
-        video_path = selected_result.get('video_path')
-        timestamp = selected_result.get('timestamp')
-        detailed_info_html = "Chi tiết Keyframe..." # Copy từ bản nháp trước
-    
+        sequence = selected_result.get('sequence', [])
+        if not sequence:
+             return None, "Lỗi: Chuỗi TRAKE rỗng.", ""
+        
+        target_frame = sequence[0] # Lấy frame đầu tiên để tạo clip
+        video_path = target_frame.get('video_path')
+        timestamp = target_frame.get('timestamp')
+        
+        seq_html = f"""
+        <div style="background: linear-gradient(135deg, #8e44ad 0%, #3498db 100%); padding: 20px; border-radius: 12px; color: white;">
+            <h3 style="margin: 0; color: white;">🎬 Chi tiết Chuỗi Hành động</h3>
+            <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <div><strong>📹 Video:</strong> <code ...>{selected_result.get('video_id')}</code></div>
+                <div><strong>🏆 Điểm TB chuỗi:</strong> <code ...>{selected_result.get('final_score', 0):.3f}</code></div>
+            </div>
+            <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;">
+                <h4 style="margin: 0 0 10px 0; color: white;">🔢 Các bước trong chuỗi:</h4>
+                <ul style="padding-left: 20px; margin: 0;">
+        """
+        for i, frame in enumerate(sequence):
+            seq_html += f"<li><strong>Bước {i+1}:</strong> Tại {frame.get('timestamp', 0):.2f}s (Điểm: {frame.get('final_score', 0):.3f})</li>"
+        seq_html += "</ul></div></div>"
+        
+        detailed_info_html = seq_html
+
+    else: # Xử lý cho KIS và QNA
+        target_frame = selected_result
+        video_path = target_frame.get('video_path')
+        timestamp = target_frame.get('timestamp')
+        detailed_info_html = _create_detailed_info_html(target_frame, task_type)
+
     video_clip_path = create_video_segment(video_path, timestamp)
-    clip_info_html = f"🎥 Video Clip (10 giây) từ {max(0, timestamp - 5):.1f}s"
+    
+    clip_info_html = f"""
+    <div style="background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%); padding: 15px; border-radius: 12px; color: white; text-align: center; margin-top: 10px;">
+        <h4 style="margin: 0;">🎥 Video Clip (10 giây)</h4>
+        <p style="margin: 8px 0 0 0; opacity: 0.9;">
+            Từ ~{max(0, timestamp - 5):.1f}s đến ~{timestamp + 5:.1f}s
+        </p>
+    </div>
+    """
     
     return video_clip_path, detailed_info_html, clip_info_html
 
@@ -195,9 +300,6 @@ def clear_all():
         None                 # submission_file_output
     )
 
-# ==============================================================================
-# === PHẦN 4: GIAO DIỆN GRADIO (UI LAYOUT) ===
-# ==============================================================================
 print("--- Giai đoạn 4/4: Đang xây dựng giao diện người dùng...")
 
 custom_css = """
@@ -338,10 +440,8 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     
     gr.HTML(app_header_html)
     
-    # State để lưu trữ kết quả tìm kiếm đầy đủ giữa các lần tương tác
     response_state = gr.State()
     
-     # --- Bố cục Phần Nhập liệu ---
     with gr.Row():
         with gr.Column(scale=8):
             query_input = gr.Textbox(
@@ -384,13 +484,11 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
             )
     
         
-    # --- Bố cục Phần Hiển thị Trạng thái và Phân tích ---
     status_output = gr.HTML()
     with gr.Row():
         gemini_analysis = gr.HTML()
         stats_info = gr.HTML()
     
-    # --- Bố cục Phần Kết quả ---
     with gr.Row():
         with gr.Column(scale=2):
             results_gallery = gr.Gallery(
@@ -416,7 +514,6 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
             clip_info = gr.HTML()
             detailed_info = gr.HTML()
 
-    # --- Bố cục Phần Nộp bài ---
     with gr.Accordion("💾 Tạo File Nộp Bài", open=False):
         with gr.Row():
             query_id_input = gr.Textbox(label="Nhập Query ID", placeholder="Ví dụ: query_01")
@@ -426,8 +523,6 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     gr.HTML(usage_guide_html)
     gr.HTML(app_footer_html)
 
-    # --- Liên kết các sự kiện (Event Listeners) ---
-    # (Dán toàn bộ phần liên kết sự kiện từ bản nháp trước)
     search_inputs = [query_input, num_results]
     search_outputs = [results_gallery, status_output, response_state, gemini_analysis, stats_info]
     
@@ -452,15 +547,10 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     ]
     clear_button.click(fn=clear_all, inputs=[], outputs=clear_outputs)
 
-# ==============================================================================
-# === LAUNCH ỨNG DỤNG ===
-# ==============================================================================
 if __name__ == "__main__":
     print("--- 🚀 Khởi chạy Gradio App Server ---")
     app.launch(
         share=True,
-        # allowed_paths cho phép Gradio truy cập các file trong thư mục này,
-        # cực kỳ quan trọng để hiển thị ảnh keyframe và video clip.
         allowed_paths=["/kaggle/input/", "/kaggle/working/"],
         debug=True, # Bật debug để xem lỗi chi tiết trên console
         show_error=True # Hiển thị lỗi trên giao diện

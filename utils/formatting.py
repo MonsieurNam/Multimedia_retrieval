@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 import os
 
 # Import TaskType để sử dụng trong type hinting
-from ..search_core.task_analyzer import TaskType
+from search_core.task_analyzer import TaskType
 
 def format_results_for_gallery(response: Dict[str, Any]) -> List[tuple]:
     """

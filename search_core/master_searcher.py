@@ -1,3 +1,4 @@
+import time
 from typing import Dict, Any, Optional
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions # Import để bắt lỗi cụ thể
@@ -81,7 +82,7 @@ class MasterSearcher:
             return False
 
 
-    def search(self, query: str, top_k: int = 100) -> Dict[str, Any]:
+    def search(self, query: str, top_k: int = 200) -> Dict[str, Any]:
         """
         Hàm tìm kiếm chính, điều phối pipeline theo quy chế thi MỚI.
         *** PHIÊN BẢN ĐÃ CẬP NHẬT LOGIC TÍNH ĐIỂM VQA ***
@@ -114,7 +115,7 @@ class MasterSearcher:
             
             candidates = self.semantic_searcher.search(
                 query_text=search_context, 
-                top_k_final=top_k if task_type == TaskType.KIS else 20,
+                top_k_final=top_k if task_type == TaskType.KIS else 5,
                 top_k_retrieval=200,
                 precomputed_analysis=query_analysis
             )
@@ -128,7 +129,7 @@ class MasterSearcher:
                 else:
                     specific_question = query_analysis.get('specific_question', query)
                     vqa_enhanced_candidates = []
-                    for cand in candidates:
+                    for i,cand in enumerate(candidates):
                         vqa_result = self.vqa_handler.get_answer(cand['keyframe_path'], specific_question)
                         
                         new_cand = cand.copy()
@@ -144,6 +145,8 @@ class MasterSearcher:
                         new_cand['scores']['vqa_confidence'] = vqa_confidence
                         
                         vqa_enhanced_candidates.append(new_cand)
+                        if i < len(candidates) - 1:
+                            time.sleep(1.5)
                     
                     final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
 

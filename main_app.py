@@ -582,15 +582,15 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     query_input.submit(fn=perform_search, inputs=search_inputs, outputs=search_outputs)
     
     results_gallery.select(
-        fn=lambda evt: evt.index, # Hàm lambda đơn giản để lấy index
-        inputs=[],
-        outputs=[selected_index_state]
+    fn=lambda evt: evt.index if evt is not None else None, # Thêm kiểm tra None để an toàn
+    inputs=[None], # SỬA Ở ĐÂY: Khai báo để nhận đối tượng sự kiện
+    outputs=[selected_index_state]
     ).then(
-        # Sau đó mới gọi hàm on_gallery_select để hiển thị video và thông tin
         fn=on_gallery_select,
-        inputs=[response_state],
+        inputs=[response_state, selected_index_state], # SỬA Ở ĐÂY: Truyền cả index đã chọn
         outputs=[video_player, detailed_info, clip_info]
     )
+
 
     # Sự kiện cho nút VQA mới
     vqa_button.click(

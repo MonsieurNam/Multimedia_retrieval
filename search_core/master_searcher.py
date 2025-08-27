@@ -40,11 +40,8 @@ class MasterSearcher:
         if gemini_api_key:
             try:
                 genai.configure(api_key=gemini_api_key)
-                # Sử dụng 'gemini-1.5-flash' cho sự cân bằng giữa tốc độ và khả năng
                 self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
                 
-                # Chia sẻ instance Gemini model cho tất cả các handler con
-                # Điều này giúp tiết kiệm tài nguyên và thời gian khởi tạo
                 self.semantic_searcher.gemini_model = self.gemini_model
                 self.vqa_handler = VQAHandler(model=self.gemini_model)
                 self.trake_solver = TRAKESolver(gemini_model=self.gemini_model)

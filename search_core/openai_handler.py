@@ -4,7 +4,7 @@ import openai
 import json
 import re
 import base64
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from utils import api_retrier
 

@@ -206,14 +206,14 @@ def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> s
     return html
 
 
-def on_gallery_select(evt: gr.SelectData, response_state: Dict[str, Any], selected_index: int):
+def on_gallery_select(evt: gr.SelectData, response_state: Dict[str, Any]):
     """
     Hàm xử lý sự kiện khi người dùng chọn một ảnh trong gallery.
     Hàm này được thiết kế để xử lý linh hoạt cả 3 loại nhiệm vụ.
     """
-    if not response_state or selected_index is None: # SỬA Ở ĐÂY: Dùng selected_index
-        # Không cần cảnh báo ở đây vì nó có thể được gọi khi bỏ chọn
-        return None, "", ""
+    if not response_state:
+        gr.Warning("Vui lòng thực hiện tìm kiếm trước khi chọn ảnh.")
+        return None, "⚠️ Vui lòng thực hiện tìm kiếm trước.", ""
 
     task_type = response_state.get('task_type')
     results = response_state.get('results', [])
@@ -222,7 +222,7 @@ def on_gallery_select(evt: gr.SelectData, response_state: Dict[str, Any], select
         gr.Error("Lỗi: Không tìm thấy kết quả tương ứng. Vui lòng thử tìm kiếm lại.")
         return None, "Lỗi: Dữ liệu không đồng bộ.", ""
 
-    selected_result = results[selected_index]
+    selected_result = results[evt.index]
 
     if task_type == TaskType.TRAKE:
         sequence = selected_result.get('sequence', [])
@@ -442,48 +442,12 @@ app_footer_html = """
         </p>
     </div>
     """
-def handle_vqa_button_click(response_state: Dict, selected_index: int, vqa_question: str):
-    """
-    Xử lý sự kiện khi người dùng bấm nút "Hỏi Đáp VQA".
-    """
-    if not vqa_question.strip():
-        gr.Warning("Vui lòng nhập câu hỏi cho VQA.")
-        return "" # Trả về chuỗi rỗng cho output
-
-    if not response_state or not response_state.get('results'):
-        gr.Warning("Vui lòng thực hiện tìm kiếm và chọn một ảnh trước.")
-        return "Lỗi: Chưa có kết quả nào được chọn."
-        
-    try:
-        # Lấy thông tin của keyframe đã được chọn
-        selected_result = response_state['results'][selected_index]
-    except (IndexError, TypeError):
-        gr.Error("Lỗi: Không thể lấy thông tin keyframe đã chọn.")
-        return "Lỗi: Dữ liệu không hợp lệ."
-
-    # Gọi đến hàm VQA mới trong backend
-    vqa_response = master_searcher.perform_vqa(selected_result, vqa_question)
-    
-    # Định dạng kết quả thành HTML để hiển thị
-    answer = vqa_response.get('answer', 'N/A')
-    confidence = vqa_response.get('confidence', 0)
-    
-    html_output = f"""
-    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin-top: 15px;">
-        <h4 style="margin: 0 0 10px 0; color: white;">💬 Kết quả VQA</h4>
-        <p style="font-size: 16px; margin: 0 0 5px 0;"><strong>Hỏi:</strong> <em>{vqa_question}</em></p>
-        <p style="font-size: 18px; font-weight: bold; margin: 0 0 10px 0;"><strong>Đáp:</strong> {answer}</p>
-        <p style="font-size: 14px; margin: 0;"><strong>Độ tự tin:</strong> {confidence:.2f}</p>
-    </div>
-    """
-    return html_output
 
 with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video Search") as app:
     
     gr.HTML(app_header_html)
     
     response_state = gr.State()
-    selected_index_state = gr.State(value=None)
     
     with gr.Row():
         with gr.Column(scale=8):
@@ -556,16 +520,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                 )
             clip_info = gr.HTML()
             detailed_info = gr.HTML()
-            
-            with gr.Accordion("💬 Hỏi Đáp AI (VQA) cho ảnh đã chọn", open=True):
-                vqa_question_input = gr.Textbox(
-                    label="Nhập câu hỏi của bạn về hình ảnh này",
-                    placeholder="Ví dụ: Người đàn ông đang mặc áo màu gì?",
-                    lines=2
-                )
-                vqa_button = gr.Button("Hỏi AI 🧠", variant="primary")
-                vqa_output = gr.HTML()
-                
+
     with gr.Accordion("💾 Tạo File Nộp Bài", open=False):
         with gr.Row():
             query_id_input = gr.Textbox(label="Nhập Query ID", placeholder="Ví dụ: query_01")
@@ -582,21 +537,9 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     query_input.submit(fn=perform_search, inputs=search_inputs, outputs=search_outputs)
     
     results_gallery.select(
-    fn=lambda evt: evt.index if evt is not None else None, # Thêm kiểm tra None để an toàn
-    inputs=[None], # SỬA Ở ĐÂY: Khai báo để nhận đối tượng sự kiện
-    outputs=[selected_index_state]
-    ).then(
         fn=on_gallery_select,
-        inputs=[response_state, selected_index_state], # SỬA Ở ĐÂY: Truyền cả index đã chọn
+        inputs=[response_state],
         outputs=[video_player, detailed_info, clip_info]
-    )
-
-
-    # Sự kiện cho nút VQA mới
-    vqa_button.click(
-        fn=handle_vqa_button_click,
-        inputs=[response_state, selected_index_state, vqa_question_input],
-        outputs=[vqa_output]
     )
     
     submission_button.click(

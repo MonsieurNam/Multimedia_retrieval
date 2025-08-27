@@ -86,7 +86,42 @@ class MasterSearcher:
         final_results = []
         
         # --- Điều phối dựa trên loại nhiệm vụ ---
-        if task_type == TaskType.TRAKE:
+        if task_type == TaskType.KIS:
+            final_results = self.semantic_searcher.search(
+                query, 
+                top_k_final=top_k,
+                precomputed_analysis=query_analysis
+            )
+
+        elif task_type == TaskType.QNA:
+            if not self.vqa_handler:
+                print("--- ⚠️ Không thể xử lý Q&A. Đang chạy tìm kiếm KIS thay thế. ---")
+                final_results = self.semantic_searcher.search(
+                    query, top_k_final=top_k, precomputed_analysis=query_analysis)
+            else:
+                # 1. Tìm các keyframe ứng viên có liên quan
+                candidates = self.semantic_searcher.search(
+                    query, top_k_final=20, top_k_retrieval=200, precomputed_analysis=query_analysis)
+                
+                # 2. Với mỗi ứng viên, gọi VQA để lấy câu trả lời và cập nhật điểm
+                vqa_enhanced_candidates = []
+                for cand in candidates:
+                    print(f"   -> 🗣️ Đặt câu hỏi VQA cho keyframe {cand['keyframe_id']}...")
+                    vqa_result = self.vqa_handler.get_answer(cand['keyframe_path'], query)
+                    
+                    new_cand = cand.copy()
+                    new_cand['answer'] = vqa_result['answer']
+                    # Cập nhật điểm cuối cùng bằng cách nhân với độ tự tin của VQA
+                    # Đây là một bước reranking quan trọng, loại bỏ các ứng viên có
+                    # hình ảnh đúng nhưng câu trả lời sai.
+                    new_cand['final_score'] *= vqa_result['confidence']
+                    new_cand['scores']['vqa_confidence'] = vqa_result['confidence']
+                    vqa_enhanced_candidates.append(new_cand)
+                
+                # 3. Sắp xếp lại danh sách dựa trên điểm số mới
+                final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
+
+        elif task_type == TaskType.TRAKE:
             if not self.trake_solver:
                 print("--- ⚠️ Không thể xử lý TRAKE. Đang chạy tìm kiếm KIS thay thế. ---")
                 final_results = self.semantic_searcher.search(
@@ -97,29 +132,9 @@ class MasterSearcher:
                 # 2. Tìm các chuỗi hợp lệ
                 final_results = self.trake_solver.find_sequences(
                     sub_queries, self.semantic_searcher, max_sequences=top_k)
-        else: # Mặc định tất cả các truy vấn khác đều là KIS
-            final_results = self.semantic_searcher.search(
-                query, 
-                top_k_final=top_k,
-                precomputed_analysis=query_analysis
-            )
 
         return {
             "task_type": task_type,
             "results": final_results[:top_k], # Đảm bảo số lượng kết quả cuối cùng đúng bằng top_k
             "query_analysis": query_analysis
         }
-        
-    def perform_vqa(self, keyframe_info: Dict, question: str) -> Dict:
-        """
-        Thực hiện VQA trên một keyframe cụ thể theo yêu cầu.
-        Đây là cổng API mới cho giao diện.
-        """
-        if not self.vqa_handler:
-            return {"answer": "Lỗi: Tính năng VQA chưa được kích hoạt.", "confidence": 0.0}
-        
-        if not keyframe_info or not 'keyframe_path' in keyframe_info:
-            return {"answer": "Lỗi: Thiếu thông tin keyframe.", "confidence": 0.0}
-
-        print(f"--- 🗣️ Thực hiện VQA theo yêu cầu cho keyframe {keyframe_info.get('keyframe_id')} ---")
-        return self.vqa_handler.get_answer(keyframe_info['keyframe_path'], question)

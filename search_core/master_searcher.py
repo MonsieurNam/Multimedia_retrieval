@@ -3,11 +3,11 @@ import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions # Import để bắt lỗi cụ thể
 
 # Import các module cốt lõi của hệ thống
-from .task_analyzer import TaskType, analyze_query_gemini, analyze_query_heuristic
-from .semantic_searcher import SemanticSearcher
-from .vqa_handler import VQAHandler
-from .trake_solver import TRAKESolver
-from ..utils import gemini_api_retrier # Import retrier
+from search_core.task_analyzer import TaskType, analyze_query_gemini, analyze_query_heuristic
+from search_core.semantic_searcher import SemanticSearcher
+from search_core.vqa_handler import VQAHandler
+from search_core.trake_solver import TRAKESolver
+from utils import gemini_api_retrier # Import retrier
 
 class MasterSearcher:
     """

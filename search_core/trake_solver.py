@@ -1,92 +1,35 @@
 
-import json
-import re
-from itertools import product
-from typing import List, Dict, Any, Optional
-import google.generativeai as genai
+from typing import List, Dict, Any
+from search_core.openai_handler import OpenAIHandler 
 
-# Import SemanticSearcher để type hinting, nhưng không thực sự import để tránh circular dependency
-# Nó sẽ được truyền vào từ MasterSearcher
+# Import SemanticSearcher để type hinting
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .semantic_searcher import SemanticSearcher
 
 class TRAKESolver:
     """
-    Class xử lý Nhiệm vụ 3: TRAKE (TRacking Action KEyframes).
-
-    Nó bao gồm hai chức năng chính:
-    1.  Phân rã một truy vấn hành động phức tạp thành các bước con mô tả ngắn gọn.
-    2.  Tìm kiếm các chuỗi keyframe hợp lệ từ các ứng viên của mỗi bước,
-        đảm bảo chúng cùng video và theo đúng thứ tự thời gian.
+    Class xử lý Nhiệm vụ TRAKE.
+    Giờ đây nó nhận một AI Handler để thực hiện việc phân rã truy vấn.
     """
-
-    def __init__(self, gemini_model: genai.GenerativeModel):
+    # --- THAY ĐỔI __init__ ---
+    def __init__(self, ai_handler: OpenAIHandler):
         """
         Khởi tạo TRAKESolver.
 
         Args:
-            gemini_model (genai.GenerativeModel): Một instance của Gemini model đã được khởi tạo
-                                                  để sử dụng cho việc phân rã truy vấn.
+            ai_handler (OpenAIHandler): Một instance của OpenAIHandler đã được khởi tạo.
         """
-        self.gemini_model = gemini_model
+        self.ai_handler = ai_handler
 
+    # --- THAY ĐỔI decompose_query ---
     def decompose_query(self, query: str) -> List[str]:
         """
-        Sử dụng Gemini để tách một truy vấn TRAKE thành các bước hành động con.
-
-        Ví dụ: "Tìm 4 khoảnh khắc VĐV nhảy: (1) giậm nhảy, (2) bay qua xà, ..."
-        -> ["vận động viên giậm nhảy", "vận động viên bay qua xà", ...]
-
-        Args:
-            query (str): Câu truy vấn TRAKE gốc của người dùng.
-
-        Returns:
-            List[str]: Một danh sách các chuỗi mô tả từng bước hành động.
+        Sử dụng AI Handler được cung cấp để tách truy vấn TRAKE thành các bước con.
         """
-        # Prompt này hướng dẫn Gemini giữ lại ngữ cảnh (VD: "vận động viên")
-        # cho mỗi bước, giúp việc tìm kiếm sau này chính xác hơn.
-        prompt = f"""
-        Analyze the following Vietnamese video search query that describes a sequence of actions. Your task is to decompose it into a short, descriptive search query for EACH key action step. Each step should be self-contained and understandable on its own.
-        
-        Return ONLY a valid JSON array of strings, where each string is a search query for one step.
-
-        **Example 1:**
-        Query: "Tìm 4 khoảnh khắc chính khi vận động viên thực hiện cú nhảy: (1) giậm nhảy, (2) bay qua xà, (3) tiếp đất, (4) đứng dậy."
-        JSON: ["vận động viên giậm nhảy", "vận động viên bay qua xà", "vận động viên tiếp đất", "vận động viên đứng dậy"]
-
-        **Example 2:**
-        Query: "Một chiếc ô tô bắt đầu di chuyển, tăng tốc, và sau đó dừng lại"
-        JSON: ["ô tô bắt đầu di chuyển", "ô tô tăng tốc trên đường", "ô tô dừng lại"]
-
-        **Query to process:** "{query}"
-        **JSON:**
-        """
-        try:
-            # Sử dụng cùng safety settings như các module khác
-            safety_settings = {
-                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
-                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-                "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-                "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-            }
-            response = self.gemini_model.generate_content(prompt, safety_settings=safety_settings)
-            
-            # Trích xuất khối JSON một cách an toàn
-            match = re.search(r'\[.*\]', response.text, re.DOTALL)
-            if match:
-                decomposed_list = json.loads(match.group(0))
-                if isinstance(decomposed_list, list) and all(isinstance(i, str) for i in decomposed_list):
-                    print(f"--- ✅ Phân rã truy vấn TRAKE thành công: {decomposed_list} ---")
-                    return decomposed_list
-            
-            # Fallback nếu không parse được JSON
-            print(f"--- ⚠️ Không thể phân rã truy vấn TRAKE, sử dụng truy vấn gốc. ---")
-            return [query]
-
-        except Exception as e:
-            print(f"--- ⚠️ Lỗi khi phân rã truy vấn TRAKE: {e}. Sử dụng truy vấn gốc. ---")
-            return [query]
+        print(f"--- 🤖 Phân rã truy vấn TRAKE bằng AI Handler... ---")
+        # Ủy quyền hoàn toàn việc gọi API cho handler
+        return self.ai_handler.decompose_trake_query(query)
 
     def find_sequences(self, sub_queries: List[str], searcher: 'SemanticSearcher', top_k_per_step: int = 15, max_sequences: int = 50) -> List[Dict[str, Any]]:
         """

@@ -32,11 +32,11 @@ print("--- Giai đoạn 2/4: Đang cấu hình và khởi tạo Backend...")
 
 try:
     user_secrets = UserSecretsClient()
-    GOOGLE_API_KEY = user_secrets.get_secret("GOOGLE_API_KEY")
-    print("--- ✅ Cấu hình Google API Key thành công! ---")
+    OPENAI_API_KEY = user_secrets.get_secret("OPENAI_API_KEY") # <-- Đổi tên biến
+    print("--- ✅ Cấu hình OpenAI API Key thành công! ---")
 except Exception as e:
-    GOOGLE_API_KEY = None
-    print(f"--- ⚠️ Không tìm thấy Google API Key. Lỗi: {e} ---")
+    OPENAI_API_KEY = None
+    print(f"--- ⚠️ Không tìm thấy OpenAI API Key. Lỗi: {e} ---")
 
 FAISS_INDEX_PATH = '/kaggle/input/stage1/faiss.index'
 RERANK_METADATA_PATH = '/kaggle/input/stage1/rerank_metadata.parquet'
@@ -45,22 +45,22 @@ ALL_ENTITIES_PATH = "/kaggle/input/stage1/all_detection_entities.json"
 
 def initialize_backend():
     """
-    Hàm khởi tạo toàn bộ backend theo đúng chuỗi phụ thuộc.
-    Hàm này sẽ được gọi một lần duy nhất khi script chạy.
+    Hàm khởi tạo toàn bộ backend theo chuỗi phụ thuộc của OpenAI.
     """
-    print("--- Đang khởi tạo các model AI (quá trình này chỉ chạy một lần)... ---")
+    print("--- Đang khởi tạo các model (quá trình này chỉ chạy một lần)... ---")
     
+    # Load video path map
     all_video_files = glob.glob(os.path.join(VIDEO_BASE_PATH, "**", "*.mp4"), recursive=True)
     video_path_map = {os.path.basename(f).replace('.mp4', ''): f for f in all_video_files}
 
-    print("   -> 1/3: Khởi tạo BasicSearcher...")
+    # Bước 1: Khởi tạo BasicSearcher (không đổi)
+    print("   -> 1/2: Khởi tạo BasicSearcher...")
     basic_searcher = BasicSearcher(FAISS_INDEX_PATH, RERANK_METADATA_PATH, video_path_map)
     
-    print("   -> 2/3: Khởi tạo SemanticSearcher...")
-    semantic_searcher = SemanticSearcher(basic_searcher=basic_searcher)
-    
-    print("   -> 3/3: Khởi tạo MasterSearcher...")
-    master_searcher = MasterSearcher(semantic_searcher=semantic_searcher, gemini_api_key=GOOGLE_API_KEY)
+    # Bước 2: Khởi tạo MasterSearcher phiên bản OpenAI
+    # MasterSearcher giờ sẽ tự quản lý SemanticSearcher và OpenAIHandler bên trong
+    print("   -> 2/2: Khởi tạo MasterSearcher (OpenAI Edition)...")
+    master_searcher = MasterSearcher(basic_searcher=basic_searcher, openai_api_key=OPENAI_API_KEY)
     
     print("--- ✅ Backend đã khởi tạo thành công! ---")
     return master_searcher

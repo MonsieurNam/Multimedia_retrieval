@@ -2,7 +2,7 @@ import time
 import random
 from functools import wraps
 
-def gemini_api_retrier(max_retries=5, initial_delay=1, backoff_factor=2, jitter=0.1):
+def api_retrier(max_retries=5, initial_delay=1, backoff_factor=2, jitter=0.1):
     """
     Một decorator để tự động thử lại các lệnh gọi API Gemini khi gặp lỗi 429.
 

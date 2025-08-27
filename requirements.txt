@@ -5,3 +5,4 @@ ffmpeg-python
 pandas 
 pyarrow 
 google-generativeai
+openai

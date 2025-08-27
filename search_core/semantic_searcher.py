@@ -13,114 +13,26 @@ from search_core.basic_searcher import BasicSearcher
 
 # Import thư viện Gemini và decorator retrier
 import google.generativeai as genai
-from utils import gemini_api_retrier
 
 class SemanticSearcher:
-    """
-    Class thực hiện tìm kiếm ngữ nghĩa nâng cao.
-
-    Chịu trách nhiệm chính cho việc tìm kiếm dựa trên nội dung (KIS) và tìm kiếm bối cảnh cho các tác vụ khác.
-    Bao gồm các bước:
-    1.  Truy xuất ứng viên ban đầu bằng CLIP đa ngôn ngữ.
-    2.  Tăng cường truy vấn bằng Gemini để trích xuất thực thể và bối cảnh.
-    3.  Tái xếp hạng (rerank) các ứng viên dựa trên công thức điểm kết hợp 3 yếu tố:
-        CLIP (hình ảnh), Object (đối tượng), và Semantic (ngữ cảnh/transcript).
-    """
-
+    # --- THAY ĐỔI __init__ ---
     def __init__(self, 
                  basic_searcher: BasicSearcher, 
                  device: str = "cuda"):
         """
         Khởi tạo SemanticSearcher.
-
-        Args:
-            basic_searcher (BasicSearcher): Một instance của BasicSearcher đã được khởi tạo.
-            device (str): Thiết bị để chạy model ('cuda' hoặc 'cpu').
+        Nó không còn quản lý model AI nữa.
         """
-        print("--- 🧠 Khởi tạo SemanticSearcher (Phiên bản Nâng cao) ---")
+        print("--- 🧠 Khởi tạo SemanticSearcher (Reranking Engine) ---")
         self.device = device
         self.basic_searcher = basic_searcher
-        # gemini_model sẽ được gán từ bên ngoài bởi MasterSearcher
-        self.gemini_model: Optional[genai.GenerativeModel] = None
-
-        print("   -> Đang tải mô hình Bi-Encoder tiếng Việt ('bkai-foundation-models/vietnamese-bi-encoder')...")
+        
+        print("   -> Đang tải mô hình Bi-Encoder tiếng Việt...")
         self.semantic_model = SentenceTransformer(
             'bkai-foundation-models/vietnamese-bi-encoder', 
             device=self.device
         )
         print("--- ✅ Tải model Bi-Encoder thành công! ---")
-        
-    @gemini_api_retrier(max_retries=3, initial_delay=2)
-    def _gemini_enhance_call(self, prompt: str):
-        """Hàm con được "trang trí", chỉ để thực hiện lệnh gọi API Gemini."""
-        safety_settings = {
-            "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
-            "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-            "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-            "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-        }
-        response = self.gemini_model.generate_content(prompt, safety_settings=safety_settings)
-        return response
-
-    def enhance_query_with_gemini(self, query: str) -> Dict[str, Any]:
-        """
-        Sử dụng Gemini để phân tích một truy vấn, có thể là KIS hoặc VQA.
-
-        Returns:
-            Dict[str, Any]: Một dictionary chứa 'search_context', 'specific_question', 
-                            'objects_vi', 'objects_en'.
-        """
-        fallback_result = {
-            'search_context': query,
-            'specific_question': "" if "?" not in query else query,
-            'objects_vi': query.split(),
-            'objects_en': query.split()
-        }
-        
-        if not self.gemini_model:
-            print("--- ⚠️ Gemini model chưa được khởi tạo. Sử dụng fallback cho enhance_query. ---")
-            return fallback_result
-
-        prompt = f"""
-        You are an expert query analyzer for a Vietnamese video search system. Your task is to analyze a user query and break it down into structured components. The query can be a simple scene description (KIS) or a question about a scene (VQA).
-
-        Return ONLY a single, valid JSON object with four keys: "search_context", "specific_question", "objects_vi", and "objects_en".
-
-        **Rules:**
-        - "search_context": A descriptive phrase in Vietnamese for finding the relevant scene. For VQA, this is the scene the question is about. For KIS, it's the query itself.
-        - "specific_question": The specific question being asked. For KIS queries, this should be an empty string "".
-        - "objects_vi": A list of important Vietnamese nouns/entities from the "search_context".
-        - "objects_en": The direct English translation for EACH item in "objects_vi". The two lists must have the same length.
-
-        **Example 1 (VQA):**
-        Query: "Trong video quay cảnh bữa tiệc, người phụ nữ mặc váy đỏ đang cầm ly màu gì?"
-        JSON: {{"search_context": "cảnh bữa tiệc có người phụ nữ mặc váy đỏ", "specific_question": "cô ấy đang cầm ly màu gì?", "objects_vi": ["bữa tiệc", "người phụ nữ", "váy đỏ"], "objects_en": ["party", "woman", "red dress"]}}
-
-        **Example 2 (KIS):**
-        Query: "một chiếc xe cứu hỏa đang chữa cháy tòa nhà"
-        JSON: {{"search_context": "một chiếc xe cứu hỏa đang chữa cháy tòa nhà", "specific_question": "", "objects_vi": ["xe cứu hỏa", "tòa nhà"], "objects_en": ["fire truck", "building"]}}
-
-        **Query to process:** "{query}"
-        **JSON:**
-        """
-        try:
-            response = self._gemini_enhance_call(prompt)
-            match = re.search(r"\{.*\}", response.text, re.DOTALL)
-            if not match:
-                raise ValueError("No JSON object found in Gemini response.")
-            
-            result = json.loads(match.group(0))
-            
-            if all(k in result for k in ['search_context', 'specific_question', 'objects_vi', 'objects_en']) and \
-               len(result['objects_vi']) == len(result['objects_en']):
-                print(f"--- ✅ Phân tích truy vấn thành công. Context: '{result['search_context']}' ---")
-                return result
-
-            print("--- ⚠️ JSON từ Gemini không hợp lệ. Sử dụng fallback. ---")
-            return fallback_result
-        except Exception as e:
-            print(f"--- ⚠️ Lỗi khi gọi API Gemini để tăng cường truy vấn: {e}. Sử dụng fallback. ---")
-            return fallback_result
 
     def search(self, 
             query_text: str, 

@@ -1,154 +1,119 @@
-import time
-from typing import Dict, Any, Optional
-import google.generativeai as genai
-from google.api_core import exceptions as google_exceptions # Import để bắt lỗi cụ thể
+# /kaggle/working/search_core/master_searcher.py
 
-# Import các module cốt lõi của hệ thống
-from search_core.task_analyzer import TaskType, analyze_query_gemini, analyze_query_heuristic
+from typing import Dict, Any, Optional
+
+# Import các thành phần cần thiết
+from search_core.basic_searcher import BasicSearcher
 from search_core.semantic_searcher import SemanticSearcher
-from search_core.vqa_handler import VQAHandler
 from search_core.trake_solver import TRAKESolver
-from utils import gemini_api_retrier # Import retrier
+from search_core.openai_handler import OpenAIHandler # <-- IMPORT HANDLER MỚI
+from search_core.task_analyzer import TaskType      # <-- Vẫn dùng Enum để code rõ ràng
 
 class MasterSearcher:
     """
-    Lớp điều phối chính của hệ thống tìm kiếm.
+    Lớp điều phối chính của hệ thống tìm kiếm (OpenAI Edition).
+    Nó quản lý OpenAIHandler và điều phối các tác vụ đến đúng nơi.
     """
 
     def __init__(self, 
-                 semantic_searcher: SemanticSearcher, 
-                 gemini_api_key: Optional[str] = None):
+                 basic_searcher: BasicSearcher, 
+                 openai_api_key: Optional[str] = None):
         """
-        Khởi tạo MasterSearcher và tất cả các thành phần con của nó.
-        """
-        print("--- 🧠 Khởi tạo Master Searcher ---")
-        
-        self.semantic_searcher = semantic_searcher
-        self.gemini_model: Optional[genai.GenerativeModel] = None
-        self.vqa_handler: Optional[VQAHandler] = None
-        self.trake_solver: Optional[TRAKESolver] = None
-        self.ai_enabled = False # Mặc định là False
+        Khởi tạo MasterSearcher phiên bản OpenAI.
 
-        if gemini_api_key:
+        Args:
+            basic_searcher (BasicSearcher): Một instance của BasicSearcher đã được khởi tạo.
+            openai_api_key (Optional[str]): API key cho OpenAI.
+        """
+        print("--- 🧠 Khởi tạo Master Searcher (OpenAI Edition) ---")
+        
+        # SemanticSearcher không còn cần model AI nữa, nó chỉ làm nhiệm vụ reranking
+        self.semantic_searcher = SemanticSearcher(basic_searcher=basic_searcher)
+        
+        self.openai_handler: Optional[OpenAIHandler] = None
+        self.trake_solver: Optional[TRAKESolver] = None
+        self.ai_enabled = False
+
+        if openai_api_key:
             try:
-                genai.configure(api_key=gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                # Khởi tạo một handler duy nhất
+                self.openai_handler = OpenAIHandler(api_key=openai_api_key)
                 
-                # --- THÊM BƯỚC KIỂM TRA API HEALTH ---
-                if self._check_api_health():
-                    # Chỉ khởi tạo các handler con nếu API hoạt động
-                    self.semantic_searcher.gemini_model = self.gemini_model
-                    self.vqa_handler = VQAHandler(model=self.gemini_model)
-                    self.trake_solver = TRAKESolver(gemini_model=self.gemini_model)
-                    self.ai_enabled = True
-                    print("--- ✅ Gemini và các AI Handler đã được khởi tạo và xác thực thành công! ---")
-                else:
-                    # Nếu health check thất bại, vô hiệu hóa các tính năng AI
-                    print("--- ❌ Kiểm tra API thất bại. Các tính năng AI sẽ bị vô hiệu hóa. ---")
-                    self.ai_enabled = False # Đảm bảo vẫn là False
+                # TODO: Thêm health check cho OpenAI nếu cần, tương tự như đã làm với Gemini
+                
+                # Cung cấp handler cho các module con cần nó
+                self.trake_solver = TRAKESolver(ai_handler=self.openai_handler)
+                
+                self.ai_enabled = True
+                print("--- ✅ OpenAI Handler đã được khởi tạo thành công! ---")
+
             except Exception as e:
-                print(f"--- ⚠️ Lỗi khi khởi tạo Gemini: {e}. AI Handler sẽ bị vô hiệu hóa. ---")
+                print(f"--- ⚠️ Lỗi khi khởi tạo OpenAI Handler: {e}. AI sẽ bị vô hiệu hóa. ---")
                 self.ai_enabled = False
         else:
-            print("--- ⚠️ Không có API Key. AI Handler (Q&A, TRAKE) sẽ bị vô hiệu hóa. ---")
+            print("--- ⚠️ Không có OpenAI API Key. AI sẽ bị vô hiệu hóa. ---")
             self.ai_enabled = False
             
         print(f"--- ✅ Master Searcher đã sẵn sàng! (AI Enabled: {self.ai_enabled}) ---")
 
-    # --- HÀM MỚI ---
-    @gemini_api_retrier(max_retries=2, initial_delay=1) # Thử lại 2 lần nếu có lỗi mạng tạm thời
-    def _check_api_health(self) -> bool:
+    def search(self, query: str, top_k: int = 100) -> Dict[str, Any]:
         """
-        Thực hiện một lệnh gọi API đơn giản để kiểm tra xem API key có hợp lệ và hoạt động không.
-        
-        Sử dụng count_tokens, một API call nhẹ và rẻ.
-
-        Returns:
-            bool: True nếu API hoạt động, False nếu không.
-        """
-        print("--- 🩺 Đang thực hiện kiểm tra trạng thái API Gemini... ---")
-        try:
-            # count_tokens là một lệnh gọi API nhẹ nhàng nhất
-            self.gemini_model.count_tokens("kiểm tra")
-            print("--- ✅ Trạng thái API: OK ---")
-            return True
-        except google_exceptions.PermissionDenied as e:
-            # Lỗi này đặc trưng cho API key sai hoặc không có quyền truy cập model
-            print(f"--- ❌ Lỗi API: Permission Denied. API Key có thể không hợp lệ. Lỗi: {e} ---")
-            return False
-        except Exception as e:
-            # Bắt các lỗi khác (mạng, etc.)
-            print(f"--- ❌ Lỗi API: Không thể kết nối đến Gemini. Lỗi: {e} ---")
-            return False
-
-
-    def search(self, query: str, top_k: int = 200) -> Dict[str, Any]:
-        """
-        Hàm tìm kiếm chính, điều phối pipeline theo quy chế thi MỚI.
-        *** PHIÊN BẢN ĐÃ CẬP NHẬT LOGIC TÍNH ĐIỂM VQA ***
+        Hàm tìm kiếm chính, điều phối toàn bộ pipeline sử dụng OpenAIHandler.
         """
         query_analysis = {}
-        
+        task_type = TaskType.KIS # Mặc định
+
         if self.ai_enabled:
-            print("--- 🧠 Bắt đầu phân tích và tăng cường truy vấn bằng Gemini... ---")
-            query_analysis = self.semantic_searcher.enhance_query_with_gemini(query)
-            task_type = analyze_query_gemini(query, self.gemini_model)
-        else:
-            print("--- Chạy ở chế độ KIS cơ bản do AI bị vô hiệu hóa ---")
-            query_analysis = {'search_context': query, 'objects_en': query.split()}
-            task_type = analyze_query_heuristic(query)
+            print("--- 🤖 Bắt đầu phân tích truy vấn bằng OpenAI... ---")
+            query_analysis = self.openai_handler.enhance_query(query)
+            task_type_str = self.openai_handler.analyze_task_type(query)
+            
+            # Chuyển đổi string trả về từ API thành Enum
+            try:
+                task_type = TaskType[task_type_str]
+            except KeyError:
+                print(f"--- ⚠️ Loại task không xác định '{task_type_str}'. Fallback về KIS. ---")
+                task_type = TaskType.KIS
         
         print(f"--- Đã phân loại truy vấn là: {task_type.value} ---")
 
         final_results = []
+        search_context = query_analysis.get('search_context', query)
         
+        # --- Điều phối dựa trên loại nhiệm vụ ---
         if task_type == TaskType.TRAKE:
             if self.trake_solver:
                 sub_queries = self.trake_solver.decompose_query(query)
                 final_results = self.trake_solver.find_sequences(sub_queries, self.semantic_searcher, max_sequences=top_k)
             else:
-                print("--- ⚠️ Không thể xử lý TRAKE. Fallback về tìm kiếm KIS. ---")
-                task_type = TaskType.KIS
-        
-        if task_type == TaskType.KIS or task_type == TaskType.QNA:
-            search_context = query_analysis.get('search_context', query)
+                 final_results = self.semantic_searcher.search(search_context, top_k_final=top_k, precomputed_analysis=query_analysis)
+
+        elif task_type == TaskType.QNA:
+            # Tìm ứng viên bối cảnh
+            candidates = self.semantic_searcher.search(search_context, top_k_final=8, top_k_retrieval=200, precomputed_analysis=query_analysis)
             
-            candidates = self.semantic_searcher.search(
-                query_text=search_context, 
-                top_k_final=top_k if task_type == TaskType.KIS else 10,
-                top_k_retrieval=200,
-                precomputed_analysis=query_analysis
-            )
+            specific_question = query_analysis.get('specific_question', query)
+            vqa_enhanced_candidates = []
+            for cand in candidates:
+                vqa_result = self.openai_handler.perform_vqa(cand['keyframe_path'], specific_question)
+                
+                new_cand = cand.copy()
+                new_cand['answer'] = vqa_result['answer']
+                
+                search_score = new_cand['final_score']
+                vqa_confidence = vqa_result['confidence']
+                final_vqa_score = search_score * vqa_confidence
+                
+                new_cand['final_score'] = final_vqa_score
+                new_cand['scores']['search_score'] = search_score
+                new_cand['scores']['vqa_confidence'] = vqa_confidence
+                
+                vqa_enhanced_candidates.append(new_cand)
             
-            if task_type == TaskType.KIS:
-                final_results = candidates
-            else: # task_type == TaskType.QNA
-                if not self.vqa_handler:
-                    print("--- ⚠️ Không thể xử lý QNA. Trả về kết quả tìm kiếm bối cảnh. ---")
-                    final_results = candidates
-                else:
-                    specific_question = query_analysis.get('specific_question', query)
-                    vqa_enhanced_candidates = []
-                    for i,cand in enumerate(candidates):
-                        vqa_result = self.vqa_handler.get_answer(cand['keyframe_path'], specific_question)
-                        
-                        new_cand = cand.copy()
-                        new_cand['answer'] = vqa_result['answer']
-                        
-                        # --- LOGIC TÍNH ĐIỂM MỚI ---
-                        search_score = new_cand['final_score']
-                        vqa_confidence = vqa_result['confidence']
-                        final_vqa_score = search_score * vqa_confidence
-                        
-                        new_cand['final_score'] = final_vqa_score
-                        new_cand['scores']['search_score'] = search_score
-                        new_cand['scores']['vqa_confidence'] = vqa_confidence
-                        
-                        vqa_enhanced_candidates.append(new_cand)
-                        if i < len(candidates) - 1:
-                            time.sleep(1.5)
-                    
-                    final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
+            final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
+
+        else: # TaskType.KIS
+            final_results = self.semantic_searcher.search(search_context, top_k_final=top_k, precomputed_analysis=query_analysis)
 
         return {
             "task_type": task_type,

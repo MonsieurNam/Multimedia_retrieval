@@ -1,6 +1,6 @@
 
 from .video_utils import create_video_segment
-from .api_utils import gemini_api_retrier
+from .api_utils import api_retrier
 from .formatting import (
     format_results_for_gallery,
     format_for_submission,
@@ -12,7 +12,7 @@ __all__ = [
     'format_results_for_gallery',
     'format_for_submission',
     'generate_submission_file',
-    'gemini_api_retrier'
+    'api_retrier'
 ]
 
 print("--- 📦 Package 'utils' đã được khởi tạo ---")

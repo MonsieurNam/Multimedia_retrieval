@@ -54,37 +54,48 @@ class SemanticSearcher:
         
     def enhance_query_with_gemini(self, query: str) -> Dict[str, Any]:
         """
-        Sử dụng Gemini để phân tích, tăng cường và dịch truy vấn của người dùng.
+        Sử dụng Gemini để phân tích một truy vấn, có thể là KIS hoặc VQA.
 
-        Args:
-            query (str): Câu truy vấn gốc bằng tiếng Việt.
+        Hàm này sẽ trả về một cấu trúc dữ liệu chuẩn hóa, bao gồm:
+        - search_context: Phần mô tả cảnh để tìm kiếm.
+        - specific_question: Câu hỏi cụ thể (chỉ cho VQA).
+        - objects_vi/en: Các thực thể để reranking (chủ yếu từ search_context).
 
         Returns:
-            Dict[str, Any]: Một dictionary chứa 'objects_vi', 'objects_en', và 'context_vi'.
+            Dict[str, Any]: Một dictionary chứa các thông tin đã được phân tích.
         """
-        fallback_result = {'objects_vi': query.split(), 'objects_en': query.split(), 'context_vi': query}
+        fallback_result = {
+            'search_context': query,
+            'specific_question': query,
+            'objects_vi': query.split(),
+            'objects_en': query.split()
+        }
         
         if not self.gemini_model:
             print("--- ⚠️ Gemini model chưa được khởi tạo. Sử dụng fallback cho enhance_query. ---")
             return fallback_result
 
         prompt = f"""
-        You are a helpful assistant for a Vietnamese video search system. Your task is to analyze a Vietnamese user query and extract key information.
-        Return ONLY a single, valid JSON object with three keys: "objects_vi", "objects_en", and "context_vi".
-        - "objects_vi": A list of important nouns and entities from the query in Vietnamese.
+        You are an expert query analyzer for a Vietnamese video search system. Your task is to analyze a user query and break it down into structured components. The query can be a simple scene description (KIS) or a question about a scene (VQA).
+
+        Return ONLY a single, valid JSON object with four keys: "search_context", "specific_question", "objects_vi", and "objects_en".
+
+        **Rules:**
+        - "search_context": A descriptive phrase in Vietnamese for finding the relevant scene. For VQA, this is the scene the question is about. For KIS, it's the query itself.
+        - "specific_question": The specific question being asked. For KIS queries, this should be an empty string "".
+        - "objects_vi": A list of important Vietnamese nouns/entities from the "search_context".
         - "objects_en": The direct English translation for EACH item in "objects_vi". The two lists must have the same length.
-        - "context_vi": A simple sentence in Vietnamese that describes the main action or context of the query.
 
-        **Example 1:**
-        Query: "cô gái mặc váy vàng đi dạo trong công viên gần bờ hồ"
-        JSON: {{"objects_vi": ["cô gái", "váy vàng", "công viên", "bờ hồ"], "objects_en": ["girl", "yellow dress", "park", "lakeshore"], "context_vi": "một cô gái đang đi dạo trong công viên"}}
+        **Example 1 (VQA):**
+        Query: "Trong video quay cảnh bữa tiệc, người phụ nữ mặc váy đỏ đang cầm ly màu gì?"
+        JSON: {{"search_context": "cảnh bữa tiệc có người phụ nữ mặc váy đỏ", "specific_question": "cô ấy đang cầm ly màu gì?", "objects_vi": ["bữa tiệc", "người phụ nữ", "váy đỏ"], "objects_en": ["party", "woman", "red dress"]}}
 
-        **Example 2:**
-        Query: "xe cứu hỏa phun nước chữa cháy tòa nhà"
-        JSON: {{"objects_vi": ["xe cứu hỏa", "nước", "tòa nhà"], "objects_en": ["fire truck", "water", "building"], "context_vi": "một chiếc xe cứu hỏa đang chữa cháy"}}
+        **Example 2 (KIS):**
+        Query: "một chiếc xe cứu hỏa đang chữa cháy tòa nhà"
+        JSON: {{"search_context": "một chiếc xe cứu hỏa đang chữa cháy tòa nhà", "specific_question": "", "objects_vi": ["xe cứu hỏa", "tòa nhà"], "objects_en": ["fire truck", "building"]}}
 
         **Query to process:** "{query}"
-        **JSON:**
+        **JSON:**   
         """
         safety_settings = {
             HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,

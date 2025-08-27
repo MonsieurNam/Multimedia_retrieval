@@ -58,83 +58,74 @@ class MasterSearcher:
             
         print("--- ✅ Master Searcher đã sẵn sàng! ---")
 
-    def search(self, query: str, top_k: int = 300) -> Dict[str, Any]:
+    def search(self, query: str, top_k: int = 100) -> Dict[str, Any]:
         """
-        Hàm tìm kiếm chính, điều phối toàn bộ pipeline.
-
-        Args:
-            query (str): Câu truy vấn của người dùng.
-            top_k (int): Số lượng kết quả cuối cùng mong muốn.
-
-        Returns:
-            Dict[str, Any]: Một dictionary chứa:
-                - 'task_type' (TaskType): Loại nhiệm vụ đã được phân loại.
-                - 'results' (list): Danh sách các kết quả đã được xử lý.
-                - 'query_analysis' (dict): Thông tin phân tích từ Gemini (nếu có).
+        Hàm tìm kiếm chính, điều phối pipeline theo quy chế thi MỚI.
+        *** PHIÊN BẢN ĐÃ CẬP NHẬT LOGIC TÍNH ĐIỂM VQA ***
         """
         query_analysis = {}
+        
         if self.ai_enabled:
             print("--- 🧠 Bắt đầu phân tích và tăng cường truy vấn bằng Gemini... ---")
             query_analysis = self.semantic_searcher.enhance_query_with_gemini(query)
             task_type = analyze_query_gemini(query, self.gemini_model)
         else:
             print("--- Chạy ở chế độ KIS cơ bản do AI bị vô hiệu hóa ---")
+            query_analysis = {'search_context': query, 'objects_en': query.split()}
             task_type = analyze_query_heuristic(query)
         
         print(f"--- Đã phân loại truy vấn là: {task_type.value} ---")
 
         final_results = []
         
-        # --- Điều phối dựa trên loại nhiệm vụ ---
-        if task_type == TaskType.KIS:
-            final_results = self.semantic_searcher.search(
-                query, 
-                top_k_final=top_k,
+        if task_type == TaskType.TRAKE:
+            if self.trake_solver:
+                sub_queries = self.trake_solver.decompose_query(query)
+                final_results = self.trake_solver.find_sequences(sub_queries, self.semantic_searcher, max_sequences=top_k)
+            else:
+                print("--- ⚠️ Không thể xử lý TRAKE. Fallback về tìm kiếm KIS. ---")
+                task_type = TaskType.KIS
+        
+        if task_type == TaskType.KIS or task_type == TaskType.QNA:
+            search_context = query_analysis.get('search_context', query)
+            
+            candidates = self.semantic_searcher.search(
+                query_text=search_context, 
+                top_k_final=top_k if task_type == TaskType.KIS else 20,
+                top_k_retrieval=200,
                 precomputed_analysis=query_analysis
             )
-
-        elif task_type == TaskType.QNA:
-            if not self.vqa_handler:
-                print("--- ⚠️ Không thể xử lý Q&A. Đang chạy tìm kiếm KIS thay thế. ---")
-                final_results = self.semantic_searcher.search(
-                    query, top_k_final=top_k, precomputed_analysis=query_analysis)
-            else:
-                # 1. Tìm các keyframe ứng viên có liên quan
-                candidates = self.semantic_searcher.search(
-                    query, top_k_final=20, top_k_retrieval=200, precomputed_analysis=query_analysis)
-                
-                # 2. Với mỗi ứng viên, gọi VQA để lấy câu trả lời và cập nhật điểm
-                vqa_enhanced_candidates = []
-                for cand in candidates:
-                    print(f"   -> 🗣️ Đặt câu hỏi VQA cho keyframe {cand['keyframe_id']}...")
-                    vqa_result = self.vqa_handler.get_answer(cand['keyframe_path'], query)
+            
+            if task_type == TaskType.KIS:
+                final_results = candidates
+            else: # task_type == TaskType.QNA
+                if not self.vqa_handler:
+                    print("--- ⚠️ Không thể xử lý QNA. Trả về kết quả tìm kiếm bối cảnh. ---")
+                    final_results = candidates
+                else:
+                    specific_question = query_analysis.get('specific_question', query)
+                    vqa_enhanced_candidates = []
+                    for cand in candidates:
+                        vqa_result = self.vqa_handler.get_answer(cand['keyframe_path'], specific_question)
+                        
+                        new_cand = cand.copy()
+                        new_cand['answer'] = vqa_result['answer']
+                        
+                        # --- LOGIC TÍNH ĐIỂM MỚI ---
+                        search_score = new_cand['final_score']
+                        vqa_confidence = vqa_result['confidence']
+                        final_vqa_score = search_score * vqa_confidence
+                        
+                        new_cand['final_score'] = final_vqa_score
+                        new_cand['scores']['search_score'] = search_score
+                        new_cand['scores']['vqa_confidence'] = vqa_confidence
+                        
+                        vqa_enhanced_candidates.append(new_cand)
                     
-                    new_cand = cand.copy()
-                    new_cand['answer'] = vqa_result['answer']
-                    # Cập nhật điểm cuối cùng bằng cách nhân với độ tự tin của VQA
-                    # Đây là một bước reranking quan trọng, loại bỏ các ứng viên có
-                    # hình ảnh đúng nhưng câu trả lời sai.
-                    new_cand['final_score'] *= vqa_result['confidence']
-                    new_cand['scores']['vqa_confidence'] = vqa_result['confidence']
-                    vqa_enhanced_candidates.append(new_cand)
-                
-                # 3. Sắp xếp lại danh sách dựa trên điểm số mới
-                final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
-
-        elif task_type == TaskType.TRAKE:
-            if not self.trake_solver:
-                print("--- ⚠️ Không thể xử lý TRAKE. Đang chạy tìm kiếm KIS thay thế. ---")
-                final_results = self.semantic_searcher.search(
-                    query, top_k_final=top_k, precomputed_analysis=query_analysis)
-            else:
-                # 1. Phân rã truy vấn thành các bước con
-                sub_queries = self.trake_solver.decompose_query(query)
-                # 2. Tìm các chuỗi hợp lệ
-                final_results = self.trake_solver.find_sequences(
-                    sub_queries, self.semantic_searcher, max_sequences=top_k)
+                    final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
 
         return {
             "task_type": task_type,
-            "results": final_results[:top_k], # Đảm bảo số lượng kết quả cuối cùng đúng bằng top_k
+            "results": final_results[:top_k],
             "query_analysis": query_analysis
         }

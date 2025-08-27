@@ -206,23 +206,24 @@ def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> s
     return html
 
 
-def on_gallery_select(evt: gr.SelectData, response_state: Dict[str, Any]):
+def on_gallery_select(response_state: Dict[str, Any], evt: gr.SelectData):
     """
     Hàm xử lý sự kiện khi người dùng chọn một ảnh trong gallery.
     Hàm này được thiết kế để xử lý linh hoạt cả 3 loại nhiệm vụ.
     """
     if not response_state:
-        gr.Warning("Vui lòng thực hiện tìm kiếm trước khi chọn ảnh.")
-        return None, "⚠️ Vui lòng thực hiện tìm kiếm trước.", ""
+        return None, "", ""
 
+    selected_index = evt.index
+    
     task_type = response_state.get('task_type')
     results = response_state.get('results', [])
     
-    if not results or evt.index >= len(results):
+    if not results or selected_index >= len(results):
         gr.Error("Lỗi: Không tìm thấy kết quả tương ứng. Vui lòng thử tìm kiếm lại.")
         return None, "Lỗi: Dữ liệu không đồng bộ.", ""
 
-    selected_result = results[evt.index]
+    selected_result = results[selected_index]
 
     if task_type == TaskType.TRAKE:
         sequence = selected_result.get('sequence', [])
@@ -538,7 +539,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     
     results_gallery.select(
         fn=on_gallery_select,
-        inputs=[response_state],
+        inputs=[response_state], # Chỉ cần response_state
         outputs=[video_player, detailed_info, clip_info]
     )
     

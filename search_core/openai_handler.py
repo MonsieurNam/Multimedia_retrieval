@@ -6,7 +6,7 @@ import re
 import base64
 from typing import Dict, Any, List
 
-from utils import gemini_api_retrier
+from utils import api_retrier
 
 class OpenAIHandler:
     """
@@ -29,7 +29,7 @@ class OpenAIHandler:
         # GPT-4o là model vision mạnh mẽ nhất hiện tại của OpenAI
         self.vision_model = "gpt-4o"
 
-    @gemini_api_retrier(max_retries=3, initial_delay=2)
+    @api_retrier(max_retries=3, initial_delay=2)
     def _openai_chat_completion(self, messages: List[Dict], is_json: bool = True, is_vision: bool = False):
         """
         Hàm con chung để thực hiện các lệnh gọi API chat completion.

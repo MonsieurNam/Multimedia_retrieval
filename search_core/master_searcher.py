@@ -58,7 +58,7 @@ class MasterSearcher:
             
         print("--- ✅ Master Searcher đã sẵn sàng! ---")
 
-    def search(self, query: str, top_k: int = 100) -> Dict[str, Any]:
+    def search(self, query: str, top_k: int = 300) -> Dict[str, Any]:
         """
         Hàm tìm kiếm chính, điều phối toàn bộ pipeline.
 

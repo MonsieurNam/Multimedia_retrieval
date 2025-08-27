@@ -476,8 +476,8 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
             )
         with gr.Column(scale=2):
             num_results = gr.Slider(
-                minimum=6,
-                maximum=24,
+                minimum=20,
+                maximum=100,
                 value=12,
                 step=3,
                 label="📊 Số kết quả",

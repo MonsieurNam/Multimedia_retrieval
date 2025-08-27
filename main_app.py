@@ -43,21 +43,29 @@ RERANK_METADATA_PATH = '/kaggle/input/stage1/rerank_metadata.parquet'
 VIDEO_BASE_PATH = "/kaggle/input/aic2025-batch-1-video/"
 ALL_ENTITIES_PATH = "/kaggle/input/stage1/all_detection_entities.json"
 
-def get_master_searcher():
+def initialize_backend():
     """
-    Hàm khởi tạo singleton cho toàn bộ backend.
-    Gradio sẽ cache kết quả của hàm này, tránh việc load lại model mỗi khi reload UI.
+    Hàm khởi tạo toàn bộ backend theo đúng chuỗi phụ thuộc.
+    Hàm này sẽ được gọi một lần duy nhất khi script chạy.
     """
     print("--- Đang khởi tạo các model AI (quá trình này chỉ chạy một lần)... ---")
+    
     all_video_files = glob.glob(os.path.join(VIDEO_BASE_PATH, "**", "*.mp4"), recursive=True)
     video_path_map = {os.path.basename(f).replace('.mp4', ''): f for f in all_video_files}
 
+    print("   -> 1/3: Khởi tạo BasicSearcher...")
     basic_searcher = BasicSearcher(FAISS_INDEX_PATH, RERANK_METADATA_PATH, video_path_map)
-    master_searcher = MasterSearcher(basic_searcher=basic_searcher, gemini_api_key=GOOGLE_API_KEY)
     
+    print("   -> 2/3: Khởi tạo SemanticSearcher...")
+    semantic_searcher = SemanticSearcher(basic_searcher=basic_searcher)
+    
+    print("   -> 3/3: Khởi tạo MasterSearcher...")
+    master_searcher = MasterSearcher(semantic_searcher=semantic_searcher, gemini_api_key=GOOGLE_API_KEY)
+    
+    print("--- ✅ Backend đã khởi tạo thành công! ---")
     return master_searcher
 
-master_searcher = get_master_searcher()
+master_searcher = initialize_backend()
 
 print("--- Giai đoạn 3/4: Đang định nghĩa các hàm logic cho giao diện...")
 

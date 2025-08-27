@@ -185,9 +185,21 @@ class SemanticSearcher:
         for i, cand in enumerate(tqdm(candidates, desc="Calculating Final Scores")):
             # --- Tính Object Score ---
             object_score = 0.0
-            detected_objects_en = cand.get('objects_detected', [])
             
-            if query_object_vectors is not None and detected_objects_en and len(detected_objects_en) > 0:
+            # Lấy danh sách object, đảm bảo nó là list
+            detected_objects_en_raw = cand.get('objects_detected', [])
+            
+            # Chuyển đổi an toàn từ NumPy array (nếu có) sang list
+            if isinstance(detected_objects_en_raw, np.ndarray):
+                detected_objects_en = detected_objects_en_raw.tolist()
+            else:
+                # Nếu nó đã là list hoặc kiểu dữ liệu khác, chuyển nó thành list
+                detected_objects_en = list(detected_objects_en_raw)
+
+            # --- DÒNG CẦN SỬA ĐÂY ---
+            # Sửa từ: `if query_object_vectors is not None and detected_objects_en and len(detected_objects_en) > 0:`
+            # Thành: `if query_object_vectors is not None and len(detected_objects_en) > 0:`
+            if query_object_vectors is not None and len(detected_objects_en) > 0:
                 detected_object_vectors = self.semantic_model.encode(
                     detected_objects_en, 
                     convert_to_tensor=True, 
@@ -197,10 +209,12 @@ class SemanticSearcher:
                 # So sánh mỗi object truy vấn với tất cả object được phát hiện
                 cosine_scores = util.pytorch_cos_sim(query_object_vectors, detected_object_vectors)
                 
-                # Với mỗi object truy vấn, tìm điểm tương đồng cao nhất
-                max_scores_per_query_obj = torch.max(cosine_scores, dim=1).values
-                # Điểm object là trung bình của các điểm cao nhất này
-                object_score = torch.mean(max_scores_per_query_obj).item()
+                # Kiểm tra để đảm bảo cosine_scores không rỗng trước khi thực hiện max()
+                if cosine_scores.numel() > 0:
+                    # Với mỗi object truy vấn, tìm điểm tương đồng cao nhất
+                    max_scores_per_query_obj = torch.max(cosine_scores, dim=1).values
+                    # Điểm object là trung bình của các điểm cao nhất này
+                    object_score = torch.mean(max_scores_per_query_obj).item()
 
             # --- Tính Semantic Score ---
             # Chuẩn hóa điểm cosine similarity (từ [-1, 1]) về thang [0, 1]

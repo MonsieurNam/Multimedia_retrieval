@@ -38,7 +38,7 @@ class SemanticSearcher:
             query_text: str, 
             top_k_final: int = 12, 
             top_k_retrieval: int = 100, 
-            precomputed_analysis: Optional[Dict] = None
+            precomputed_analysis:  Dict[str, Any] = None
             ) -> List[Dict[str, Any]]:
         """
         Thực hiện pipeline tìm kiếm ngữ nghĩa hoàn chỉnh cho một context.
@@ -61,11 +61,7 @@ class SemanticSearcher:
             print("-> Không tìm thấy ứng viên nào.")
             return []
 
-        # --- Bước 2: Lấy thông tin Phân tích & Tăng cường ---
-        if precomputed_analysis:
-            enhanced_query = precomputed_analysis
-        else:
-            enhanced_query = self.enhance_query_with_gemini(query_text)
+        enhanced_query = precomputed_analysis
         
         rerank_keywords_en = enhanced_query.get('objects_en', [])
         rerank_context_vi = enhanced_query.get('search_context', query_text).lower().strip()

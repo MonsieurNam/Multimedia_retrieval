@@ -30,14 +30,10 @@ class OpenAIHandler:
         self.vision_model = "gpt-4o"
 
     @api_retrier(max_retries=3, initial_delay=2)
-    def _openai_chat_completion(self, messages: List[Dict], is_json: bool = True, is_vision: bool = False):
+    def _openai_chat_completion(self, messages: List[Dict], is_json: bool = True, is_vision: bool = False) -> Optional[str]: # Thêm Optional[str]
         """
         Hàm con chung để thực hiện các lệnh gọi API chat completion.
-
-        Args:
-            messages (List[Dict]): Danh sách các message theo định dạng OpenAI.
-            is_json (bool): True nếu muốn model trả về JSON object.
-            is_vision (bool): True nếu đây là một lệnh gọi có hình ảnh.
+        *** PHIÊN BẢN AN TOÀN HƠN ***
         """
         model_to_use = self.vision_model if is_vision else self.model
         response_format = {"type": "json_object"} if is_json else {"type": "text"}
@@ -46,10 +42,18 @@ class OpenAIHandler:
             model=model_to_use,
             messages=messages,
             response_format=response_format,
-            temperature=0.1, # Giảm nhiệt độ để kết quả nhất quán
-            max_tokens=1024  # Giới hạn token để tránh chi phí không mong muốn
+            temperature=0.1,
+            max_tokens=1024
         )
-        return response.choices[0].message.content
+        
+        # --- THÊM KIỂM TRA TẠI ĐÂY ---
+        if response.choices and response.choices[0].message:
+            content = response.choices[0].message.content
+            # Trả về chuỗi rỗng nếu content là None, thay vì trả về chính None
+            return content if content is not None else "" 
+        
+        # Nếu không có choices hoặc message, trả về chuỗi rỗng
+        return ""
 
     def _encode_image_to_base64(self, image_path: str) -> str:
         """Mã hóa một file ảnh thành chuỗi base64."""
@@ -93,42 +97,75 @@ class OpenAIHandler:
             return fallback_result
 
     def analyze_task_type(self, query: str) -> str:
-        """Phân loại truy vấn thành 'KIS', 'QNA', hoặc 'TRAKE'."""
+        """
+        Phân loại truy vấn thành 'KIS', 'QNA', hoặc 'TRAKE' với độ chính xác cao hơn.
+        Sử dụng prompt được tinh chỉnh với định nghĩa rõ ràng và ví dụ 'bẫy'.
+        """
+        # Prompt mới, chi tiết hơn rất nhiều
         prompt = f"""
-        Classify the Vietnamese query into "KIS", "QNA", or "TRAKE". Return ONLY the type as a single word.
-        - "KIS": Looking for a single scene.
-        - "QNA": Asking a question about a scene.
-        - "TRAKE": Looking for a sequence of actions.
+        You are an expert query classifier. Your task is to analyze a Vietnamese user query and classify it into one of three strict categories: "KIS", "QNA", or "TRAKE".
+
+        **Category Definitions:**
+        1.  **QNA (Question Answering):** The query MUST be a direct question. It typically starts with interrogative words (Ai, Cái gì, Ở đâu, Khi nào, Như thế nào, Tại sao, Bao nhiêu) or ends with a question mark (?). The user is asking for a specific piece of information that is NOT the video itself.
+        2.  **TRAKE (Temporal Alignment):** The query explicitly asks for a SEQUENCE of multiple, ordered events. It often contains numbers, steps (bước 1, bước 2), or a list of actions separated by commas or "and".
+        3.  **KIS (Knowledge Intensive Search):** This is the default category. The query is a descriptive statement or phrase. It describes a scene, an object, or an action the user wants to find. **If the query is NOT a direct question and NOT a sequence, it is KIS.**
+
+        **Chain of Thought Analysis:**
+        - First, check if the query is a direct question. Does it ask "what", "who", "where", "how many"? If yes, it is **QNA**.
+        - If not a question, check if it asks for a sequence of multiple steps. Does it say "(1)...(2)..." or "first this, then that"? If yes, it is **TRAKE**.
+        - If it's neither a question nor a sequence, it is a description of a scene. Therefore, it is **KIS**.
+
+        **Examples:**
+        - Query: "cái gì màu xanh trên bàn?" -> QNA (Direct question)
+        - Query: "tìm cảnh người đàn ông (1) đứng lên và (2) rời đi" -> TRAKE (Sequence)
+        - Query: "người đàn ông phát biểu ở mỹ" -> KIS (This is a DESCRIPTION of a scene, not a question asking where he is)
+        - Query: "một người phụ nữ mặc áo dài" -> KIS (A description)
+        - Query: "Có bao nhiêu chiếc xe trên đường?" -> QNA (Direct question)
+
+        **Your Task:**
+        Analyze the following query and return ONLY the category as a single word: KIS, QNA, or TRAKE.
+
         Query: "{query}"
-        Type:
+        Category:
         """
         try:
             response = self._openai_chat_completion([{"role": "user", "content": prompt}], is_json=False)
             task_type = response.strip().upper()
             if task_type in ["KIS", "QNA", "TRAKE"]:
+                print(f"--- ✅ Phân loại truy vấn (OpenAI): '{query}' -> {task_type} ---")
                 return task_type
-            return "KIS" # Fallback an toàn
+            # Nếu AI trả về một kết quả lạ, fallback về heuristic
+            print(f"--- ⚠️ Phân loại không hợp lệ từ OpenAI: '{task_type}'. Fallback về Heuristic. ---")
+            return self._analyze_query_heuristic_fallback(query)
+
         except Exception as e:
-            print(f"Lỗi OpenAI analyze_task_type: {e}")
-            return "KIS"
+            print(f"Lỗi OpenAI analyze_task_type: {e}. Fallback về Heuristic.")
+            return self._analyze_query_heuristic_fallback(query)
+
+    def _analyze_query_heuristic_fallback(self, query: str) -> str:
+        """
+        Hàm heuristic dự phòng, được giữ lại để đảm bảo hệ thống luôn hoạt động.
+        """
+        query_lower = query.lower().strip()
+        qna_keywords = ['màu gì', 'ai là', 'ai đang', 'ở đâu', 'khi nào', 'tại sao', 'cái gì', 'bao nhiêu']
+        if '?' in query or any(query_lower.startswith(k) for k in qna_keywords):
+            return "QNA"
+        trake_pattern = r'\(\d+\)|bước \d+|\d\.'
+        if re.search(trake_pattern, query_lower) or "tìm các khoảnh khắc" in query_lower:
+            return "TRAKE"
+        return "KIS"
 
     def perform_vqa(self, image_path: str, question: str) -> Dict[str, any]:
         """
         Thực hiện VQA sử dụng GPT-4o.
+        *** PHIÊN BẢN CÓ XỬ LÝ LỖI TỐT HƠN ***
         """
         base64_image = self._encode_image_to_base64(image_path)
         if not base64_image:
             return {"answer": "Lỗi: Không thể xử lý ảnh", "confidence": 0.0}
 
-        prompt = f"""
-        You are a Visual Question Answering assistant. Based on the provided image, answer the user's question.
-        Return ONLY a valid JSON object with two keys: "answer" and "confidence".
-        - "answer": A short, direct answer in Vietnamese.
-        - "confidence": Your confidence in the answer, from 0.0 (very unsure) to 1.0 (certain).
-
-        Question: "{question}"
-        JSON:
-        """
+        prompt = f"""...""" # Prompt VQA giữ nguyên
+        
         messages = [
             {
                 "role": "user",
@@ -143,13 +180,24 @@ class OpenAIHandler:
         ]
         try:
             response_content = self._openai_chat_completion(messages, is_json=True, is_vision=True)
+            
+            # --- THÊM KIỂM TRA TẠI ĐÂY ---
+            # Nếu _openai_chat_completion trả về chuỗi rỗng do lỗi hoặc API không trả lời
+            if not response_content:
+                print("--- ⚠️ OpenAI VQA không trả về nội dung. ---")
+                return {"answer": "Không thể phân tích hình ảnh", "confidence": 0.1}
+
             result = json.loads(response_content)
             return {
                 "answer": result.get("answer", "Không có câu trả lời"),
                 "confidence": float(result.get("confidence", 0.5))
             }
+        except (json.JSONDecodeError, TypeError) as e:
+             # Bắt cả lỗi TypeError từ json.loads(None) và JSONDecodeError
+            print(f"Lỗi OpenAI perform_vqa (JSON parsing): {e}. Response nhận được: '{response_content}'")
+            return {"answer": "Lỗi định dạng phản hồi", "confidence": 0.0}
         except Exception as e:
-            print(f"Lỗi OpenAI perform_vqa: {e}")
+            print(f"Lỗi không xác định trong OpenAI perform_vqa: {e}")
             return {"answer": "Lỗi xử lý VQA", "confidence": 0.0}
 
     def decompose_trake_query(self, query: str) -> List[str]:

@@ -56,11 +56,23 @@ class MasterSearcher:
             
         print(f"--- ✅ Master Searcher đã sẵn sàng! (AI Enabled: {self.ai_enabled}) ---")
 
-    def search(self, query: str, top_k: int = 100) -> Dict[str, Any]:
+    def search(self, query: str,  config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Hàm tìm kiếm chính, điều phối toàn bộ pipeline sử dụng OpenAIHandler.
         """
         query_analysis = {}
+        top_k_final = config.get('top_k_final', 12)
+    
+        # KIS config
+        kis_retrieval = config.get('kis_retrieval', 100)
+        
+        # VQA config
+        vqa_candidates = config.get('vqa_candidates', 8)
+        vqa_retrieval = config.get('vqa_retrieval', 200)
+
+        # TRAKE config
+        trake_candidates_per_step = config.get('trake_candidates_per_step', 15)
+        trake_max_sequences = config.get('trake_max_sequences', 50)
         task_type = TaskType.KIS # Mặc định
 
         if self.ai_enabled:
@@ -113,10 +125,10 @@ class MasterSearcher:
             final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
 
         else: # TaskType.KIS
-            final_results = self.semantic_searcher.search(search_context, top_k_final=top_k, precomputed_analysis=query_analysis)
+            final_results = self.semantic_searcher.search(search_context, top_k_final=top_k_final, precomputed_analysis=query_analysis)
 
         return {
             "task_type": task_type,
-            "results": final_results[:top_k],
+            "results": final_results[:top_k_final],
             "query_analysis": query_analysis
         }

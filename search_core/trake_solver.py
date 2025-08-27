@@ -39,8 +39,8 @@ class TRAKESolver:
     def find_sequences(self, 
                        sub_queries: List[str], 
                        searcher: 'SemanticSearcher', 
-                       top_k_per_step: int = 15, 
-                       max_sequences: int = 50
+                       top_k_per_step: int , 
+                       max_sequences: int
                       ) -> List[Dict[str, Any]]:
         """
         Tìm các chuỗi keyframe hợp lệ dựa trên danh sách các truy vấn con.

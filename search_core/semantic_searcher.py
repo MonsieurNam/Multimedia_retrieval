@@ -36,8 +36,8 @@ class SemanticSearcher:
 
     def search(self, 
             query_text: str, 
-            top_k_final: int = 12, 
-            top_k_retrieval: int = 100, 
+            top_k_final: int , 
+            top_k_retrieval: int , 
             precomputed_analysis:  Dict[str, Any] = None
             ) -> List[Dict[str, Any]]:
         """

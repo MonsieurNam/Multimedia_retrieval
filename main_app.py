@@ -69,17 +69,33 @@ master_searcher = initialize_backend()
 
 print("--- Giai đoạn 3/4: Đang định nghĩa các hàm logic cho giao diện...")
 
-def perform_search(query_text: str, num_results: int):
+def perform_search(query_text: str, 
+        num_results: int,
+        kis_retrieval: int,
+        vqa_candidates: int,
+        vqa_retrieval: int,
+        trake_candidates_per_step: int,
+        trake_max_sequences: int
+    ):
     """
     Hàm chính xử lý sự kiện tìm kiếm. Gọi MasterSearcher và định dạng kết quả.
     """
     if not query_text.strip():
         gr.Warning("Vui lòng nhập truy vấn tìm kiếm!")
         return [], "⚠️ Vui lòng nhập truy vấn và bấm Tìm kiếm.", None, "", ""
-
+    
+    config = {
+        "top_k_final": int(num_results),
+        "kis_retrieval": int(kis_retrieval),
+        "vqa_candidates": int(vqa_candidates),
+        "vqa_retrieval": int(vqa_retrieval),
+        "trake_candidates_per_step": int(trake_candidates_per_step),
+        "trake_max_sequences": int(trake_max_sequences)
+    }
+    
     start_time = time.time()
     
-    response = master_searcher.search(query=query_text, top_k=num_results)
+    response = master_searcher.search(query=query_text, config=config)
     
     search_time = time.time() - start_time
     
@@ -490,7 +506,37 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                 variant="secondary",
                 size="lg"
             )
-    
+    with gr.Accordion("⚙️ Tùy chỉnh Nâng cao", open=False):
+        gr.Markdown("Điều chỉnh các tham số của thuật toán tìm kiếm và tái xếp hạng.")
+        with gr.Tabs():
+            with gr.TabItem("KIS / Chung"):
+                kis_retrieval_slider = gr.Slider(
+                    minimum=50, maximum=500, value=100, step=25,
+                    label="Số ứng viên KIS ban đầu (Retrieval)",
+                    info="Lấy bao nhiêu ứng viên từ FAISS trước khi rerank cho KIS."
+                )
+            with gr.TabItem("VQA"):
+                vqa_candidates_slider = gr.Slider(
+                    minimum=3, maximum=30, value=8, step=1,
+                    label="Số ứng viên VQA",
+                    info="Hỏi đáp AI trên bao nhiêu ứng viên có bối cảnh tốt nhất."
+                )
+                vqa_retrieval_slider = gr.Slider(
+                    minimum=50, maximum=500, value=200, step=25,
+                    label="Số ứng viên VQA ban đầu (Retrieval)",
+                    info="Lấy bao nhiêu ứng viên từ FAISS để tìm bối cảnh cho VQA."
+                )
+            with gr.TabItem("TRAKE"):
+                trake_candidates_per_step_slider = gr.Slider(
+                    minimum=5, maximum=30, value=15, step=1,
+                    label="Số ứng viên mỗi bước (TRAKE)",
+                    info="Với mỗi bước trong chuỗi, lấy bao nhiêu ứng viên."
+                )
+                trake_max_sequences_slider = gr.Slider(
+                    minimum=10, maximum=100, value=50, step=5,
+                    label="Số chuỗi kết quả tối đa (TRAKE)",
+                    info="Số lượng chuỗi tối đa sẽ được trả về."
+                )
         
     status_output = gr.HTML()
     with gr.Row():
@@ -531,7 +577,15 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     gr.HTML(usage_guide_html)
     gr.HTML(app_footer_html)
 
-    search_inputs = [query_input, num_results]
+    search_inputs = [
+        query_input, 
+        num_results,
+        kis_retrieval_slider,
+        vqa_candidates_slider,
+        vqa_retrieval_slider,
+        trake_candidates_per_step_slider,
+        trake_max_sequences_slider
+    ]
     search_outputs = [results_gallery, status_output, response_state, gemini_analysis, stats_info]
     
     search_button.click(fn=perform_search, inputs=search_inputs, outputs=search_outputs)

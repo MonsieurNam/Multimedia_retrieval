@@ -3,5 +3,5 @@ sentence_transformers
 faiss-cpu 
 ffmpeg-python 
 pandas 
-yarrow 
+pyarrow 
 google-generativeai

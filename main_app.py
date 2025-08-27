@@ -206,14 +206,14 @@ def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> s
     return html
 
 
-def on_gallery_select(evt: gr.SelectData, response_state: Dict[str, Any]):
+def on_gallery_select(evt: gr.SelectData, response_state: Dict[str, Any], selected_index: int):
     """
     Hàm xử lý sự kiện khi người dùng chọn một ảnh trong gallery.
     Hàm này được thiết kế để xử lý linh hoạt cả 3 loại nhiệm vụ.
     """
-    if not response_state:
-        gr.Warning("Vui lòng thực hiện tìm kiếm trước khi chọn ảnh.")
-        return None, "⚠️ Vui lòng thực hiện tìm kiếm trước.", ""
+    if not response_state or selected_index is None: # SỬA Ở ĐÂY: Dùng selected_index
+        # Không cần cảnh báo ở đây vì nó có thể được gọi khi bỏ chọn
+        return None, "", ""
 
     task_type = response_state.get('task_type')
     results = response_state.get('results', [])
@@ -222,7 +222,7 @@ def on_gallery_select(evt: gr.SelectData, response_state: Dict[str, Any]):
         gr.Error("Lỗi: Không tìm thấy kết quả tương ứng. Vui lòng thử tìm kiếm lại.")
         return None, "Lỗi: Dữ liệu không đồng bộ.", ""
 
-    selected_result = results[evt.index]
+    selected_result = results[selected_index]
 
     if task_type == TaskType.TRAKE:
         sequence = selected_result.get('sequence', [])

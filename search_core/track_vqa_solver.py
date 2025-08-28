@@ -87,7 +87,7 @@ class TrackVQASolver:
                     "answer": vqa_result.get('answer', ''),
                     "frame_info": moment 
                 })
-                print(f"     -> ✅ Kết quả được chấp nhận (Conf > 0.6): '{answer_text}'")
+                print(f"     -> ✅ Kết quả được chấp nhận (Conf > 0.6): '{answer_text}' frame_path:'{moment['keyframe_path']}'")
             else:
                 print(f"     -> ❌ Kết quả bị loại bỏ (Conf <= 0.6 hoặc lỗi).")
 

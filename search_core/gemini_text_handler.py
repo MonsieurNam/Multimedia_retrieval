@@ -15,7 +15,7 @@ class GeminiTextHandler:
     Bao gồm: phân loại tác vụ, phân tích chi tiết truy vấn, và phân rã truy vấn TRAKE.
     """
 
-    def __init__(self, api_key: str, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash"):
         """
         Khởi tạo Gemini Text Handler.
 
@@ -63,13 +63,24 @@ class GeminiTextHandler:
     def analyze_task_type(self, query: str) -> str:
         """Phân loại truy vấn bằng Gemini, sử dụng prompt có Quy tắc Ưu tiên."""
         prompt = f"""
-        You are a highly precise query classifier. Classify a Vietnamese query into "KIS", "QNA", "TRAKE", or "TRACK_VQA". You MUST follow a strict priority order.
+        You are a highly precise query classifier. Your task is to classify a Vietnamese query into one of four categories: TRACK_VQA, TRAKE, QNA, or KIS. You MUST follow a strict priority order.
 
         **Priority Order for Classification (Check from top to bottom):**
-        1. **Check for TRACK_VQA first:** ... (Dán prompt `analyze_task_type` hoàn chỉnh đã sửa ở bước trước vào đây)
-        2. **Then, check for TRAKE:** ...
-        3. **Then, check for QNA:** ...
-        4. **Default to KIS:** ...
+
+        1.  **Check for TRACK_VQA first:** Does the query ask a question about a COLLECTION of items, requiring aggregation (counting, listing, summarizing)? Look for keywords like "đếm", "bao nhiêu", "liệt kê", "tất cả", "mỗi", or plural subjects. If it matches, classify as **TRACK_VQA** and stop.
+            - Example: "trong buổi trình diễn múa lân, đếm xem có bao nhiêu con lân" -> This is a request to count a collection, so it is **TRACK_VQA**.
+
+        2.  **Then, check for TRAKE:** If it's not TRACK_VQA, does the query ask for a SEQUENCE of DIFFERENT, ordered actions? Look for patterns like "(1)...(2)...", "bước 1... bước 2", "sau đó". If it matches, classify as **TRAKE** and stop.
+            - Example: "người đàn ông đứng lên rồi bước đi"
+
+        3.  **Then, check for QNA:** If it's not TRACK_VQA or TRAKE, is it a direct question about a SINGLE item? Look for a question mark "?" or interrogative words like "cái gì", "ai". If it matches, classify as **QNA** and stop.
+            - Example: "người phụ nữ mặc áo màu gì?"
+
+        4.  **Default to KIS:** If the query does not meet any of the criteria above, it is a simple description of a scene. Classify as **KIS**.
+            - Example: "cảnh múa lân"
+
+        **Your Task:**
+        Follow the priority order strictly. Analyze the query below and return ONLY the final category as a single word.
 
         **Query:** "{query}"
         **Category:**
@@ -90,15 +101,20 @@ class GeminiTextHandler:
             'objects_vi': [], 'objects_en': []
         }
         prompt = f"""
-        Analyze a Vietnamese user query. Return ONLY a valid JSON object.
-        **JSON Structure to return:**
-        - "search_context": ...
-        - "specific_question": ... (Dán prompt `enhance_query` hoàn chỉnh đã sửa ở bước trước vào đây)
-        - "aggregation_instruction": ...
-        - "objects_vi" / "objects_en": ...
+        Analyze a Vietnamese user query for a video search system. **Return ONLY a valid JSON object** with: "search_context", "specific_question", "objects_vi", and "objects_en".
 
-        **Query:** "{query}"
-        **JSON:**
+        Rules:
+        - "search_context": A Vietnamese phrase for finding the scene.
+        - "specific_question": The specific question. For KIS queries, this is an empty string "".
+        - "objects_vi": A list of Vietnamese nouns/entities.
+        - "objects_en": The English translation for EACH item in "objects_vi". The two lists must have the same length.
+
+        Example (VQA):
+        Query: "Trong video quay cảnh bữa tiệc, người phụ nữ mặc váy đỏ đang cầm ly màu gì?"
+        JSON: {{"search_context": "cảnh bữa tiệc có người phụ nữ mặc váy đỏ", "specific_question": "cô ấy đang cầm ly màu gì?", "objects_vi": ["bữa tiệc", "người phụ nữ", "váy đỏ"], "objects_en": ["party", "woman", "red dress"]}}
+
+        Query: "{query}"
+        JSON:
         """
         try:
             response = self._gemini_text_call(prompt)

@@ -2,9 +2,12 @@ from typing import List, Dict, Any
 
 # Import các thành phần cần thiết để type hinting
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
-    from .openai_handler import OpenAIHandler
-    from .semantic_searcher import SemanticSearcher
+    from search_core.openai_handler import OpenAIHandler
+    from search_core.semantic_searcher import SemanticSearcher
+    from search_core.gemini_text_handler import GeminiTextHandler
+
 import time
 
 class TrackVQASolver:
@@ -18,16 +21,23 @@ class TrackVQASolver:
     4.  Sử dụng AI để tổng hợp tất cả bằng chứng thành một câu trả lời cuối cùng.
     """
 
-    def __init__(self, ai_handler: 'OpenAIHandler', semantic_searcher: 'SemanticSearcher'):
+    def __init__(self, 
+                 text_handler: 'GeminiTextHandler', 
+                 vision_handler: 'OpenAIHandler', 
+                 semantic_searcher: 'SemanticSearcher'):
         """
         Khởi tạo TrackVQASolver.
 
         Args:
-            ai_handler (OpenAIHandler): Handler để thực hiện các lệnh gọi AI (VQA, tổng hợp).
+            text_handler (GeminiTextHandler): Handler để thực hiện các tác vụ text (phân tích).
+            vision_handler (OpenAIHandler): Handler để thực hiện các tác vụ vision (VQA lặp lại).
             semantic_searcher (SemanticSearcher): Searcher để truy xuất các khoảnh khắc.
         """
-        self.ai_handler = ai_handler
+        # Đổi tên self.ai_handler thành các tên cụ thể hơn
+        self.text_handler = text_handler
+        self.vision_handler = vision_handler
         self.searcher = semantic_searcher
+
 
     def solve(self, query_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -72,7 +82,7 @@ class TrackVQASolver:
         for moment in moments_to_analyze:
             # Chúng ta có thể thêm một khoảng chờ nhỏ ở đây để tránh rate limit
             time.sleep(0.5) 
-            vqa_result = self.ai_handler.perform_vqa(moment['keyframe_path'], specific_question)
+            vqa_result = self.vision_handler.perform_vqa(moment['keyframe_path'], specific_question)
             
             # Chỉ thu thập các câu trả lời có độ tự tin cao để tránh "nhiễu"
             if vqa_result['confidence'] > 0.6:
@@ -126,8 +136,8 @@ class TrackVQASolver:
         # Gọi API của ai_handler để nhận câu trả lời tổng hợp
         # Ở đây, chúng ta không cần JSON
         try:
-            response = self.ai_handler._openai_chat_completion([{"role": "user", "content": prompt}], is_json=False)
-            return response
+            response = self.text_handler._gemini_text_call([{"role": "user", "content": prompt}], is_json=False)
+            return response.text if hasattr(response, 'text') else str(response)
         except Exception as e:
             print(f"--- ⚠️ Lỗi khi tổng hợp câu trả lời: {e} ---")
             return "Không thể tổng hợp kết quả."

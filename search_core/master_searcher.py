@@ -128,9 +128,7 @@ class MasterSearcher:
                 evidence_frames = track_vqa_result.get("evidence_frames", [])
                 for frame in evidence_frames:   
                     path = frame.get('keyframe_path')
-                    if path:
-                    
-                        print(f"DEBUG: Checking path '{path}'... Found: {path}") # <-- THÊM DÒNG NÀY
+                    print(f"DEBUG: Checking path '{path}'... Found: {path}") # <-- THÊM DÒNG NÀY
                 # --- LOGIC "LÀM PHẲNG" DỮ LIỆU BẮT ĐẦU TỪ ĐÂY ---
 
                 # 1. Tạo một danh sách các đường dẫn ảnh (chỉ string)

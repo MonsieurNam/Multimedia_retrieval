@@ -586,7 +586,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                     info="Lấy bao nhiêu ứng viên từ FAISS để tìm tất cả các bối cảnh."
                 )
                 track_vqa_candidates_slider = gr.Slider(
-                    minimum=10, maximum=100, value=50, step=5,
+                    minimum=5, maximum=100, value=20, step=5,
                     label="Số ứng viên Track-VQA được phân tích",
                     info="Số lượng ứng viên tốt nhất sẽ được đưa vào pipeline VQA lặp lại."
                 )

@@ -92,96 +92,96 @@ class OpenAIHandler:
             print(f"--- ⚠️ Lỗi khi mã hóa ảnh {image_path}: {e} ---")
             return ""
 
-    def enhance_query(self, query: str) -> Dict[str, Any]:
-        """
-        Phân tích, tăng cường và dịch truy vấn của người dùng.
-        """
-        fallback_result = {'search_context': query, 'specific_question': "", 'objects_vi': [], 'objects_en': []}
-        prompt = f"""
-        Analyze a Vietnamese user query for a video search system. **Return ONLY a valid JSON object** with: "search_context", "specific_question", "objects_vi", and "objects_en".
+    # def enhance_query(self, query: str) -> Dict[str, Any]:
+    #     """
+    #     Phân tích, tăng cường và dịch truy vấn của người dùng.
+    #     """
+    #     fallback_result = {'search_context': query, 'specific_question': "", 'objects_vi': [], 'objects_en': []}
+    #     prompt = f"""
+    #     Analyze a Vietnamese user query for a video search system. **Return ONLY a valid JSON object** with: "search_context", "specific_question", "objects_vi", and "objects_en".
 
-        Rules:
-        - "search_context": A Vietnamese phrase for finding the scene.
-        - "specific_question": The specific question. For KIS queries, this is an empty string "".
-        - "objects_vi": A list of Vietnamese nouns/entities.
-        - "objects_en": The English translation for EACH item in "objects_vi". The two lists must have the same length.
+    #     Rules:
+    #     - "search_context": A Vietnamese phrase for finding the scene.
+    #     - "specific_question": The specific question. For KIS queries, this is an empty string "".
+    #     - "objects_vi": A list of Vietnamese nouns/entities.
+    #     - "objects_en": The English translation for EACH item in "objects_vi". The two lists must have the same length.
 
-        Example (VQA):
-        Query: "Trong video quay cảnh bữa tiệc, người phụ nữ mặc váy đỏ đang cầm ly màu gì?"
-        JSON: {{"search_context": "cảnh bữa tiệc có người phụ nữ mặc váy đỏ", "specific_question": "cô ấy đang cầm ly màu gì?", "objects_vi": ["bữa tiệc", "người phụ nữ", "váy đỏ"], "objects_en": ["party", "woman", "red dress"]}}
+    #     Example (VQA):
+    #     Query: "Trong video quay cảnh bữa tiệc, người phụ nữ mặc váy đỏ đang cầm ly màu gì?"
+    #     JSON: {{"search_context": "cảnh bữa tiệc có người phụ nữ mặc váy đỏ", "specific_question": "cô ấy đang cầm ly màu gì?", "objects_vi": ["bữa tiệc", "người phụ nữ", "váy đỏ"], "objects_en": ["party", "woman", "red dress"]}}
 
-        Query: "{query}"
-        JSON:
-        """
-        try:
-            response_content = self._openai_chat_completion([{"role": "user", "content": prompt}], is_json=True)
-            result = json.loads(response_content)
-            # Validate...
-            if all(k in result for k in ['search_context', 'specific_question', 'objects_vi', 'objects_en']):
-                return result
-            return fallback_result
-        except Exception as e:
-            print(f"Lỗi OpenAI enhance_query: {e}")
-            return fallback_result
+    #     Query: "{query}"
+    #     JSON:
+    #     """
+    #     try:
+    #         response_content = self._openai_vision_call([{"role": "user", "content": prompt}], is_json=True)
+    #         result = json.loads(response_content)
+    #         # Validate...
+    #         if all(k in result for k in ['search_context', 'specific_question', 'objects_vi', 'objects_en']):
+    #             return result
+    #         return fallback_result
+    #     except Exception as e:
+    #         print(f"Lỗi OpenAI enhance_query: {e}")
+    #         return fallback_result
 
-    def analyze_task_type(self, query: str) -> str:
-        """
-        Phân loại truy vấn với Quy tắc Ưu tiên để xử lý các trường hợp lai.
-        """
-        prompt = f"""
-        You are a highly precise query classifier. Your task is to classify a Vietnamese query into one of four categories: TRACK_VQA, TRAKE, QNA, or KIS. You MUST follow a strict priority order.
+    # def analyze_task_type(self, query: str) -> str:
+    #     """
+    #     Phân loại truy vấn với Quy tắc Ưu tiên để xử lý các trường hợp lai.
+    #     """
+    #     prompt = f"""
+    #     You are a highly precise query classifier. Your task is to classify a Vietnamese query into one of four categories: TRACK_VQA, TRAKE, QNA, or KIS. You MUST follow a strict priority order.
 
-        **Priority Order for Classification (Check from top to bottom):**
+    #     **Priority Order for Classification (Check from top to bottom):**
 
-        1.  **Check for TRACK_VQA first:** Does the query ask a question about a COLLECTION of items, requiring aggregation (counting, listing, summarizing)? Look for keywords like "đếm", "bao nhiêu", "liệt kê", "tất cả", "mỗi", or plural subjects. If it matches, classify as **TRACK_VQA** and stop.
-            - Example: "trong buổi trình diễn múa lân, đếm xem có bao nhiêu con lân" -> This is a request to count a collection, so it is **TRACK_VQA**.
+    #     1.  **Check for TRACK_VQA first:** Does the query ask a question about a COLLECTION of items, requiring aggregation (counting, listing, summarizing)? Look for keywords like "đếm", "bao nhiêu", "liệt kê", "tất cả", "mỗi", or plural subjects. If it matches, classify as **TRACK_VQA** and stop.
+    #         - Example: "trong buổi trình diễn múa lân, đếm xem có bao nhiêu con lân" -> This is a request to count a collection, so it is **TRACK_VQA**.
 
-        2.  **Then, check for TRAKE:** If it's not TRACK_VQA, does the query ask for a SEQUENCE of DIFFERENT, ordered actions? Look for patterns like "(1)...(2)...", "bước 1... bước 2", "sau đó". If it matches, classify as **TRAKE** and stop.
-            - Example: "người đàn ông đứng lên rồi bước đi"
+    #     2.  **Then, check for TRAKE:** If it's not TRACK_VQA, does the query ask for a SEQUENCE of DIFFERENT, ordered actions? Look for patterns like "(1)...(2)...", "bước 1... bước 2", "sau đó". If it matches, classify as **TRAKE** and stop.
+    #         - Example: "người đàn ông đứng lên rồi bước đi"
 
-        3.  **Then, check for QNA:** If it's not TRACK_VQA or TRAKE, is it a direct question about a SINGLE item? Look for a question mark "?" or interrogative words like "cái gì", "ai". If it matches, classify as **QNA** and stop.
-            - Example: "người phụ nữ mặc áo màu gì?"
+    #     3.  **Then, check for QNA:** If it's not TRACK_VQA or TRAKE, is it a direct question about a SINGLE item? Look for a question mark "?" or interrogative words like "cái gì", "ai". If it matches, classify as **QNA** and stop.
+    #         - Example: "người phụ nữ mặc áo màu gì?"
 
-        4.  **Default to KIS:** If the query does not meet any of the criteria above, it is a simple description of a scene. Classify as **KIS**.
-            - Example: "cảnh múa lân"
+    #     4.  **Default to KIS:** If the query does not meet any of the criteria above, it is a simple description of a scene. Classify as **KIS**.
+    #         - Example: "cảnh múa lân"
 
-        **Your Task:**
-        Follow the priority order strictly. Analyze the query below and return ONLY the final category as a single word.
+    #     **Your Task:**
+    #     Follow the priority order strictly. Analyze the query below and return ONLY the final category as a single word.
 
-        **Query:** "{query}"
-        **Category:**
-        """
-        try:
-            # Sử dụng hàm chat completion đã có
-            response = self._openai_chat_completion([{"role": "user", "content": prompt}], is_json=False)
-            task_type = response.strip().upper()
+    #     **Query:** "{query}"
+    #     **Category:**
+    #     """
+    #     try:
+    #         # Sử dụng hàm chat completion đã có
+    #         response = self._openai_vision_call([{"role": "user", "content": prompt}], is_json=False)
+    #         task_type = response.strip().upper()
             
-            # Kiểm tra xem kết quả trả về có hợp lệ không
-            if task_type in ["KIS", "QNA", "TRAKE", "TRACK_VQA"]:
-                print(f"--- ✅ Phân loại truy vấn (OpenAI): '{query}' -> {task_type} ---")
-                return task_type
+    #         # Kiểm tra xem kết quả trả về có hợp lệ không
+    #         if task_type in ["KIS", "QNA", "TRAKE", "TRACK_VQA"]:
+    #             print(f"--- ✅ Phân loại truy vấn (OpenAI): '{query}' -> {task_type} ---")
+    #             return task_type
                 
-            print(f"--- ⚠️ Phân loại không hợp lệ từ OpenAI: '{task_type}'. Fallback về Heuristic. ---")
-            return self._analyze_query_heuristic_fallback(query) # Vẫn giữ fallback
+    #         print(f"--- ⚠️ Phân loại không hợp lệ từ OpenAI: '{task_type}'. Fallback về Heuristic. ---")
+    #         return self._analyze_query_heuristic_fallback(query) # Vẫn giữ fallback
 
-        except Exception as e:
-            print(f"Lỗi OpenAI analyze_task_type: {e}. Fallback về Heuristic.")
-            return self._analyze_query_heuristic_fallback(query)
+    #     except Exception as e:
+    #         print(f"Lỗi OpenAI analyze_task_type: {e}. Fallback về Heuristic.")
+    #         return self._analyze_query_heuristic_fallback(query)
 
-    # Cập nhật hàm fallback heuristic để nó không bao giờ trả về TRACK_VQA
-    def _analyze_query_heuristic_fallback(self, query: str) -> str:
-        """
-        Hàm heuristic dự phòng. Sẽ không phân loại TRACK_VQA, để an toàn.
-        """
-        query_lower = query.lower().strip()
-        qna_keywords = ['màu gì', 'ai là', 'ai đang', 'ở đâu', 'khi nào', 'tại sao', 'cái gì', 'bao nhiêu']
-        if '?' in query or any(query_lower.startswith(k) for k in qna_keywords):
-            # Lưu ý: "bao nhiêu" có thể là TRACK_VQA, nhưng trong heuristic ta ưu tiên QNA cho an toàn
-            return "QNA"
-        trake_pattern = r'\(\d+\)|bước \d+|\d\.'
-        if re.search(trake_pattern, query_lower) or "tìm các khoảnh khắc" in query_lower:
-            return "TRAKE"
-        return "KIS"
+    # # Cập nhật hàm fallback heuristic để nó không bao giờ trả về TRACK_VQA
+    # def _analyze_query_heuristic_fallback(self, query: str) -> str:
+    #     """
+    #     Hàm heuristic dự phòng. Sẽ không phân loại TRACK_VQA, để an toàn.
+    #     """
+    #     query_lower = query.lower().strip()
+    #     qna_keywords = ['màu gì', 'ai là', 'ai đang', 'ở đâu', 'khi nào', 'tại sao', 'cái gì', 'bao nhiêu']
+    #     if '?' in query or any(query_lower.startswith(k) for k in qna_keywords):
+    #         # Lưu ý: "bao nhiêu" có thể là TRACK_VQA, nhưng trong heuristic ta ưu tiên QNA cho an toàn
+    #         return "QNA"
+    #     trake_pattern = r'\(\d+\)|bước \d+|\d\.'
+    #     if re.search(trake_pattern, query_lower) or "tìm các khoảnh khắc" in query_lower:
+    #         return "TRAKE"
+    #     return "KIS"
 
     def perform_vqa(self, image_path: str, question: str) -> Dict[str, any]:
         """
@@ -215,7 +215,7 @@ class OpenAIHandler:
             }
         ]
         try:
-            response_content = self._openai_chat_completion(messages, is_json=True, is_vision=True)
+            response_content = self._openai_vision_call(messages, is_json=True, is_vision=True)
             
             if not response_content:
                 print("--- ⚠️ OpenAI VQA không trả về nội dung. ---")

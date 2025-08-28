@@ -109,13 +109,13 @@ def perform_search(query_text: str,
     
     start_time = time.time()
     
-    response = master_searcher.search(query=query_text, config=config)
+    full_response = master_searcher.search(query=query_text, config=config)
     
     search_time = time.time() - start_time
     
-    formatted_gallery = format_results_for_gallery(response)
+    formatted_gallery = format_results_for_gallery(full_response)
     
-    query_analysis = response.get('query_analysis', {})
+    query_analysis = full_response.get('query_analysis', {})
     gemini_analysis_html = f"""
     <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); padding: 20px; border-radius: 12px; color: white; margin: 10px 0; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
         <h3 style="margin: 0; color: white; display: flex; align-items: center;">
@@ -123,13 +123,13 @@ def perform_search(query_text: str,
         </h3>
         <div style="margin-top: 15px;">
             <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; margin: 8px 0;">
-                <strong>🎯 Đối tượng (VI):</strong> <code style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 4px;">{', '.join(response['query_analysis'].get('objects_vi', []))}</code>
+                <strong>🎯 Đối tượng (VI):</strong> <code style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 4px;">{', '.join(full_response['query_analysis'].get('objects_vi', []))}</code>
             </div>
             <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; margin: 8px 0;">
-                <strong>🌍 Đối tượng (EN):</strong> <code style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 4px;">{', '.join(response['query_analysis'].get('objects_en', []))}</code>
+                <strong>🌍 Đối tượng (EN):</strong> <code style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 4px;">{', '.join(full_response['query_analysis'].get('objects_en', []))}</code>
             </div>
             <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; margin: 8px 0;">
-                <strong>📝 Bối cảnh:</strong> <em>"{response['query_analysis'].get('context_vi', '')}"</em>
+                <strong>📝 Bối cảnh:</strong> <em>"{full_response['query_analysis'].get('context_vi', '')}"</em>
             </div>
         </div>
     </div>
@@ -141,11 +141,14 @@ def perform_search(query_text: str,
         <p style="margin: 10px 0 0 0; opacity: 0.9;"> Số kết quả: <strong>{num_results}</strong></p>
     </div>
     """
-    
-    task_type_msg = response.get('task_type', TaskType.KIS).value
+    cleaned_response_for_state = {
+        "task_type": full_response.get("task_type"),
+        "results": full_response.get("results")
+    }
+    task_type_msg = full_response.get('task_type', TaskType.KIS).value
     status_msg_html = f"✅ Tìm kiếm hoàn tất trong {search_time:.2f}s. Chế độ: {task_type_msg}"
     
-    return formatted_gallery, status_msg_html, response, gemini_analysis_html, stats_info_html
+    return formatted_gallery, status_msg_html, cleaned_response_for_state, gemini_analysis_html, stats_info_html
 
 def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> str:
     """
@@ -342,9 +345,10 @@ def on_gallery_select(response_state: Dict[str, Any], evt: gr.SelectData):
     
     return video_clip_path, detailed_info_html, clip_info_html
 
-def handle_submission(response_state: dict, query_id: str):
+def handle_submission(response_state: Dict[str, Any], query_id: str):
     """
     Tạo và cung cấp file nộp bài.
+    Hàm này không bị ảnh hưởng vì `task_type` và `results` vẫn có trong state đã được dọn dẹp.
     """
     if not response_state or not response_state.get('results'):
         gr.Warning("Không có kết quả để tạo file nộp bài.")
@@ -354,6 +358,7 @@ def handle_submission(response_state: dict, query_id: str):
         gr.Warning("Vui lòng nhập Query ID để tạo file.")
         return None
         
+    # Hàm này vẫn hoạt động bình thường với `cleaned_response_for_state`
     submission_df = format_for_submission(response_state, max_results=100)
     
     if submission_df.empty:

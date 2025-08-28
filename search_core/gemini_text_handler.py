@@ -101,20 +101,28 @@ class GeminiTextHandler:
             'objects_vi': [], 'objects_en': []
         }
         prompt = f"""
-        Analyze a Vietnamese user query for a video search system. **Return ONLY a valid JSON object** with: "search_context", "specific_question", "objects_vi", and "objects_en".
+        Analyze a Vietnamese user query for a video search system. **Return ONLY a valid JSON object** with five keys: "search_context", "specific_question", "aggregation_instruction", "objects_vi", and "objects_en".
 
-        Rules:
-        - "search_context": A Vietnamese phrase for finding the scene.
-        - "specific_question": The specific question. For KIS queries, this is an empty string "".
-        - "objects_vi": A list of Vietnamese nouns/entities.
-        - "objects_en": The English translation for EACH item in "objects_vi". The two lists must have the same length.
+        **Rules:**
+        1.  `search_context`: A Vietnamese phrase for finding the general scene. This is used for vector search.
+        2.  `specific_question`: The specific question to ask the Vision model for EACH individual frame.
+        3.  `aggregation_instruction`: The final instruction for the AI to synthesize all individual answers. This should reflect the user's ultimate goal (e.g., counting, listing, summarizing).
+        4.  `objects_vi`: A list of Vietnamese nouns/entities.
+        5.  `objects_en`: The English translation for EACH item in `objects_vi`.
 
-        Example (VQA):
+        **Example (VQA):**
         Query: "Trong video quay cảnh bữa tiệc, người phụ nữ mặc váy đỏ đang cầm ly màu gì?"
-        JSON: {{"search_context": "cảnh bữa tiệc có người phụ nữ mặc váy đỏ", "specific_question": "cô ấy đang cầm ly màu gì?", "objects_vi": ["bữa tiệc", "người phụ nữ", "váy đỏ"], "objects_en": ["party", "woman", "red dress"]}}
+        JSON: {{"search_context": "cảnh bữa tiệc có người phụ nữ mặc váy đỏ", "specific_question": "cô ấy đang cầm ly màu gì?", "aggregation_instruction": "trả lời câu hỏi người phụ nữ cầm ly màu gì", "objects_vi": ["bữa tiệc", "người phụ nữ", "váy đỏ"], "objects_en": ["party", "woman", "red dress"]}}
 
-        Query: "{query}"
-        JSON:
+        **Example (Track-VQA):**
+        Query: "đếm xem có bao nhiêu con lân trong buổi biểu diễn"
+        JSON: {{"search_context": "buổi biểu diễn múa lân", "specific_question": "có con lân nào trong ảnh này không và màu gì?", "aggregation_instruction": "từ các quan sát, đếm tổng số lân và liệt kê màu sắc của chúng", "objects_vi": ["con lân", "buổi biểu diễn"], "objects_en": ["lion dance", "performance"]}}
+
+        **Your Task:**
+        Analyze the query below and generate the JSON.
+
+        **Query:** "{query}"
+        **JSON:**
         """
         try:
             response = self._gemini_text_call(prompt)

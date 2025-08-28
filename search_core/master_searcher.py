@@ -7,85 +7,94 @@ from search_core.basic_searcher import BasicSearcher
 from search_core.semantic_searcher import SemanticSearcher
 from search_core.trake_solver import TRAKESolver
 from search_core.track_vqa_solver import TrackVQASolver
+from search_core.gemini_text_handler import GeminiTextHandler
 from search_core.openai_handler import OpenAIHandler
 from search_core.task_analyzer import TaskType
 
 class MasterSearcher:
     """
-    Lớp điều phối chính của hệ thống tìm kiếm (OpenAI Edition).
-    Nó quản lý OpenAIHandler và điều phối các tác vụ đến đúng solver/handler.
-    Đây là entry point duy nhất cho toàn bộ backend.
+    Lớp điều phối chính của hệ thống tìm kiếm (Hybrid AI Edition).
+    Nó quản lý và điều phối các AI Handler khác nhau (Gemini cho text, OpenAI cho vision)
+    để giải quyết các loại truy vấn phức tạp.
     """
 
     def __init__(self, 
                  basic_searcher: BasicSearcher, 
+                 gemini_api_key: Optional[str] = None,
                  openai_api_key: Optional[str] = None):
         """
-        Khởi tạo MasterSearcher và tất cả các thành phần con của nó.
+        Khởi tạo MasterSearcher và hệ sinh thái AI lai.
 
         Args:
-            basic_searcher (BasicSearcher): Một instance của BasicSearcher đã được khởi tạo.
-            openai_api_key (Optional[str]): API key cho OpenAI.
+            basic_searcher (BasicSearcher): Instance của BasicSearcher đã được khởi tạo.
+            gemini_api_key (Optional[str]): API key cho Google Gemini (dùng cho text).
+            openai_api_key (Optional[str]): API key cho OpenAI (dùng cho vision/VQA).
         """
-        print("--- 🧠 Khởi tạo Master Searcher (OpenAI Edition) ---")
+        print("--- 🧠 Khởi tạo Master Searcher (Hybrid AI Edition) ---")
         
-        # SemanticSearcher không quản lý model AI, chỉ làm nhiệm vụ reranking.
         self.semantic_searcher = SemanticSearcher(basic_searcher=basic_searcher)
         
+        self.gemini_handler: Optional[GeminiTextHandler] = None
         self.openai_handler: Optional[OpenAIHandler] = None
         self.trake_solver: Optional[TRAKESolver] = None
         self.track_vqa_solver: Optional[TrackVQASolver] = None
         self.ai_enabled = False
 
+        # --- Khởi tạo và xác thực Gemini Handler cho các tác vụ TEXT ---
+        if gemini_api_key:
+            try:
+                self.gemini_handler = GeminiTextHandler(api_key=gemini_api_key)
+                self.ai_enabled = True # Bật cờ AI nếu ít nhất một handler hoạt động
+            except Exception as e:
+                print(f"--- ⚠️ Lỗi khi khởi tạo Gemini Handler: {e}. Các tính năng text AI sẽ bị hạn chế. ---")
+
+        # --- Khởi tạo và xác thực OpenAI Handler cho các tác vụ VISION ---
         if openai_api_key:
             try:
-                # Khởi tạo một handler duy nhất để quản lý tất cả các lệnh gọi API
                 self.openai_handler = OpenAIHandler(api_key=openai_api_key)
-                
-                # Thực hiện kiểm tra trạng thái API ngay khi khởi động
-                if self.openai_handler.check_api_health():
-                    # Nếu API hoạt động, khởi tạo các solver phụ thuộc vào nó
-                    self.trake_solver = TRAKESolver(ai_handler=self.openai_handler)
-                    self.track_vqa_solver = TrackVQASolver(ai_handler=self.openai_handler, semantic_searcher=self.semantic_searcher)
-                    self.ai_enabled = True
-                    print("--- ✅ OpenAI Handler và các AI Solver đã được khởi tạo và xác thực thành công! ---")
+                if not self.openai_handler.check_api_health():
+                    self.openai_handler = None # Vô hiệu hóa nếu health check thất bại
                 else:
-                    print("--- ❌ Kiểm tra API thất bại. Các tính năng AI sẽ bị vô hiệu hóa. ---")
-                    self.ai_enabled = False
+                    self.ai_enabled = True
             except Exception as e:
-                print(f"--- ⚠️ Lỗi khi khởi tạo OpenAI Handler: {e}. AI sẽ bị vô hiệu hóa. ---")
-                self.ai_enabled = False
-        else:
-            print("--- ⚠️ Không có OpenAI API Key. AI sẽ bị vô hiệu hóa. ---")
-            self.ai_enabled = False
-            
+                print(f"--- ⚠️ Lỗi khi khởi tạo OpenAI Handler: {e}. Các tính năng vision AI sẽ bị hạn chế. ---")
+        
+        # --- Khởi tạo các Solver phức tạp nếu các handler cần thiết đã sẵn sàng ---
+        if self.gemini_handler:
+            # TRAKE Solver chỉ cần text handler để phân rã truy vấn
+            self.trake_solver = TRAKESolver(ai_handler=self.gemini_handler)
+        
+        if self.gemini_handler and self.openai_handler:
+            # TrackVQASolver cần cả hai: text để phân tích, vision để hỏi đáp
+            self.track_vqa_solver = TrackVQASolver(
+                text_handler=self.gemini_handler, 
+                vision_handler=self.openai_handler,
+                semantic_searcher=self.semantic_searcher
+            )
+
         print(f"--- ✅ Master Searcher đã sẵn sàng! (AI Enabled: {self.ai_enabled}) ---")
 
     def search(self, query: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Hàm tìm kiếm chính, nhận một dictionary config để tùy chỉnh hành vi.
+        Hàm tìm kiếm chính, điều phối toàn bộ pipeline lai.
         """
-        # --- Bước 1: Giải nén Config & Phân tích Truy vấn ---
-        top_k_final = config.get('top_k_final', 12)
-        
+        # --- Bước 1: Phân tích Truy vấn (Luôn dùng Gemini Text Handler) ---
         query_analysis = {}
         task_type = TaskType.KIS
 
-        if self.ai_enabled:
-            print("--- 🤖 Bắt đầu phân tích truy vấn bằng OpenAI... ---")
-            query_analysis = self.openai_handler.enhance_query(query)
-            task_type_str = self.openai_handler.analyze_task_type(query)
+        if self.ai_enabled and self.gemini_handler:
+            print("--- ✨ Bắt đầu phân tích truy vấn bằng Gemini Text Handler... ---")
+            query_analysis = self.gemini_handler.enhance_query(query)
+            task_type_str = self.gemini_handler.analyze_task_type(query)
             try:
                 task_type = TaskType[task_type_str]
             except KeyError:
-                print(f"--- ⚠️ Loại task không xác định '{task_type_str}'. Fallback về KIS. ---")
                 task_type = TaskType.KIS
         
         print(f"--- Đã phân loại truy vấn là: {task_type.value} ---")
 
         final_results = []
-        
-        # --- Bước 2: Khối Điều phối Logic ---
+        top_k_final = config.get('top_k_final', 12)
         search_context = query_analysis.get('search_context', query)
 
         if task_type == TaskType.TRACK_VQA:

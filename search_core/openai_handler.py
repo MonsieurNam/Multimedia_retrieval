@@ -28,9 +28,37 @@ class OpenAIHandler:
         self.model = model
         # GPT-4o là model vision mạnh mẽ nhất hiện tại của OpenAI
         self.vision_model = "gpt-4o"
+        
+    @api_retrier(max_retries=2, initial_delay=1)
+    def check_api_health(self) -> bool:
+        """
+        Thực hiện một lệnh gọi API đơn giản để kiểm tra xem API key có hợp lệ và hoạt động không.
+        
+        Sử dụng việc tạo embedding cho một từ ngắn, đây là một API call nhẹ và rẻ.
+
+        Returns:
+            bool: True nếu API hoạt động, False nếu không.
+        """
+        print("--- 🩺 Đang thực hiện kiểm tra trạng thái API OpenAI... ---")
+        try:
+            # text-embedding-ada-002 hoặc text-embedding-3-small là lựa chọn tốt
+            self.client.embeddings.create(
+                input="kiểm tra",
+                model="text-embedding-3-small"
+            )
+            print("--- ✅ Trạng thái API OpenAI: OK ---")
+            return True
+        except openai.AuthenticationError as e:
+            # Lỗi này đặc trưng cho API key sai hoặc không hợp lệ
+            print(f"--- ❌ Lỗi OpenAI API: Authentication Error. API Key có thể không hợp lệ. Lỗi: {e} ---")
+            return False
+        except Exception as e:
+            # Bắt các lỗi khác (mạng, etc.)
+            print(f"--- ❌ Lỗi OpenAI API: Không thể kết nối đến OpenAI. Lỗi: {e} ---")
+            return False
 
     @api_retrier(max_retries=3, initial_delay=2)
-    def _openai_chat_completion(self, messages: List[Dict], is_json: bool = True, is_vision: bool = False) -> Optional[str]: # Thêm Optional[str]
+    def _openai_vision_call(self, messages: List[Dict], is_json: bool = True, is_vision: bool = False) -> Optional[str]: # Thêm Optional[str]
         """
         Hàm con chung để thực hiện các lệnh gọi API chat completion.
         *** PHIÊN BẢN AN TOÀN HƠN ***

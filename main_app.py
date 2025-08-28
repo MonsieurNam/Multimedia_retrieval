@@ -37,6 +37,13 @@ try:
 except Exception as e:
     OPENAI_API_KEY = None
     print(f"--- ⚠️ Không tìm thấy OpenAI API Key. Lỗi: {e} ---")
+try:
+    GEMINI_API_KEY = user_secrets.get_secret("GOOGLE_API_KEY")
+    print("--- ✅ Cấu hình GEMINI API Key thành công! ---")
+except Exception as e:
+    GEMINI_API_KEY = None
+    print(f"--- ⚠️ Không tìm thấy GEMINI API Key. Lỗi: {e} ---")
+
 
 FAISS_INDEX_PATH = '/kaggle/input/stage1/faiss.index'
 RERANK_METADATA_PATH = '/kaggle/input/stage1/rerank_metadata.parquet'
@@ -59,9 +66,12 @@ def initialize_backend():
     
     # Bước 2: Khởi tạo MasterSearcher phiên bản OpenAI
     # MasterSearcher giờ sẽ tự quản lý SemanticSearcher và OpenAIHandler bên trong
-    print("   -> 2/2: Khởi tạo MasterSearcher (OpenAI Edition)...")
-    master_searcher = MasterSearcher(basic_searcher=basic_searcher, openai_api_key=OPENAI_API_KEY)
-    
+    print("   -> 2/2: Khởi tạo MasterSearcher (OpenAI Edition and GEMINI)...")
+    master_searcher = MasterSearcher(
+            basic_searcher=basic_searcher,
+            openai_api_key=OPENAI_API_KEY,
+            gemini_api_key=GEMINI_API_KEY
+        )    
     print("--- ✅ Backend đã khởi tạo thành công! ---")
     return master_searcher
 

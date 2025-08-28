@@ -247,7 +247,7 @@ class OpenAIHandler:
         JSON:
         """
         try:
-            response_content = self._openai_chat_completion([{"role": "user", "content": prompt}], is_json=True)
+            response_content = self._openai_vision_call([{"role": "user", "content": prompt}], is_json=True)
             result = json.loads(response_content)
             if isinstance(result, list):
                 return result

@@ -101,7 +101,6 @@ class OpenAIHandler:
         Phân loại truy vấn thành 'KIS', 'QNA', 'TRAKE', hoặc 'TRACK_VQA' với độ chính xác cao.
         *** PHIÊN BẢN NÂNG CẤP VỚI TRACK_VQA ***
         """
-        # Prompt mới, được thiết kế lại hoàn toàn với 4 loại nhiệm vụ
         prompt = f"""
         You are an expert query classifier for a sophisticated video search system. Your task is to analyze a Vietnamese user query and classify it into one of four precise categories: "KIS", "QNA", "TRAKE", or "TRACK_VQA".
 

@@ -78,10 +78,15 @@ class TrackVQASolver:
             # Chúng ta có thể thêm một khoảng chờ nhỏ ở đây để tránh rate limit
             time.sleep(0.5) 
             vqa_result = self.vision_handler.perform_vqa(moment['keyframe_path'], specific_question)
-            
-            # Chỉ thu thập các câu trả lời có độ tự tin cao để tránh "nhiễu"
-            if vqa_result['confidence'] > 0.6:
-                instance_answers.append(vqa_result['answer'])
+            print(f"     -> Phản hồi API: {vqa_result}")
+
+            # Lọc câu trả lời dựa trên độ tự tin
+            if vqa_result and vqa_result.get('confidence', 0) > 0.6:
+                answer_text = vqa_result.get('answer', '')
+                instance_answers.append(answer_text)
+                print(f"     -> ✅ Kết quả được chấp nhận (Conf > 0.6): '{answer_text}'")
+            else:
+                print(f"     -> ❌ Kết quả bị loại bỏ (Conf <= 0.6 hoặc lỗi).")
 
         if not instance_answers:
             return {"final_answer": "Không thể thu thập đủ thông tin từ các khoảnh khắc tìm thấy.", "evidence_frames": candidates[:5]}

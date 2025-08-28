@@ -85,7 +85,9 @@ def perform_search(query_text: str,
         vqa_candidates: int,
         vqa_retrieval: int,
         trake_candidates_per_step: int,
-        trake_max_sequences: int
+        trake_max_sequences: int,
+        track_vqa_retrieval: int, # <-- Thêm tham số
+        track_vqa_candidates: int  # <-- Thêm tham số
     ):
     """
     Hàm chính xử lý sự kiện tìm kiếm. Gọi MasterSearcher và định dạng kết quả.
@@ -100,7 +102,9 @@ def perform_search(query_text: str,
         "vqa_candidates": int(vqa_candidates),
         "vqa_retrieval": int(vqa_retrieval),
         "trake_candidates_per_step": int(trake_candidates_per_step),
-        "trake_max_sequences": int(trake_max_sequences)
+        "trake_max_sequences": int(trake_max_sequences),
+        "track_vqa_retrieval": int(track_vqa_retrieval), # <-- Thêm vào dict
+        "track_vqa_candidates": int(track_vqa_candidates)  # <-- Thêm vào dict
     }
     
     start_time = time.time()
@@ -589,7 +593,17 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                     label="Số chuỗi kết quả tối đa (TRAKE)",
                     info="Số lượng chuỗi tối đa sẽ được trả về."
                 )
-        
+            with gr.TabItem("Track-VQA"):
+                track_vqa_retrieval_slider = gr.Slider(
+                    minimum=100, maximum=500, value=300, step=25,
+                    label="Số ứng viên Track-VQA ban đầu (Retrieval)",
+                    info="Lấy bao nhiêu ứng viên từ FAISS để tìm tất cả các bối cảnh."
+                )
+                track_vqa_candidates_slider = gr.Slider(
+                    minimum=10, maximum=100, value=50, step=5,
+                    label="Số ứng viên Track-VQA được phân tích",
+                    info="Số lượng ứng viên tốt nhất sẽ được đưa vào pipeline VQA lặp lại."
+                )
     status_output = gr.HTML()
     with gr.Row():
         gemini_analysis = gr.HTML()
@@ -636,7 +650,9 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
         vqa_candidates_slider,
         vqa_retrieval_slider,
         trake_candidates_per_step_slider,
-        trake_max_sequences_slider
+        trake_max_sequences_slider,
+        track_vqa_retrieval_slider, # <-- Thêm slider mới
+        track_vqa_candidates_slider   # <-- Thêm slider mới
     ]
     search_outputs = [results_gallery, status_output, response_state, gemini_analysis, stats_info]
     

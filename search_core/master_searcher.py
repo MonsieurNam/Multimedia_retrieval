@@ -94,8 +94,8 @@ class MasterSearcher:
         trake_max_sequences = int(config.get('trake_max_sequences', 50))
 
         # Track-VQA config
-        track_vqa_retrieval = int(config.get('track_vqa_retrieval', 300))
-        track_vqa_candidates_to_analyze = int(config.get('track_vqa_candidates', 50))
+        track_vqa_retrieval = int(config.get('track_vqa_retrieval', 200))
+        track_vqa_candidates_to_analyze = int(config.get('track_vqa_candidates', 20))
 
         # --- Bước 2: Phân tích Truy vấn (giữ nguyên) ---
         query_analysis = {}

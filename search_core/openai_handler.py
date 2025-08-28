@@ -155,68 +155,74 @@ class OpenAIHandler:
 
     def analyze_task_type(self, query: str) -> str:
         """
-        Phân loại truy vấn thành 'KIS', 'QNA', 'TRAKE', hoặc 'TRACK_VQA' với độ chính xác cao.
-        *** PHIÊN BẢN NÂNG CẤP VỚI TRACK_VQA ***
+        Phân loại truy vấn thành 'KIS', 'QNA', 'TRAKE', hoặc 'TRACK_VQA' với sự tập trung
+        vào việc phân biệt giữa câu hỏi về một đối tượng (QNA) và một tập hợp (TRACK_VQA).
         """
-        # Prompt mới, được thiết kế lại hoàn toàn với 4 loại nhiệm vụ
         prompt = f"""
-        You are an expert query classifier for a sophisticated video search system. Your task is to analyze a Vietnamese user query and classify it into one of four precise categories: "KIS", "QNA", "TRAKE", or "TRACK_VQA".
+        You are an expert query classifier for a video search system. Your task is to analyze a Vietnamese query and classify it into one of four precise categories: "KIS", "QNA", "TRAKE", or "TRACK_VQA".
 
-        **Category Definitions:**
+        **Core Principle: Singular vs. Plural/Collection**
 
-        1.  **QNA (Question Answering):** The query MUST be a direct question about a SINGLE, specific, implicitly defined scene. The user wants one answer about one moment.
-            - Example: "người đàn ông mặc áo gì trong buổi họp báo?" (Asks about one specific man)
-            - Example: "What color is the car?"
+        1.  **QNA (Question Answering - Singular):** The query asks a question about a SINGLE, implicitly defined subject. The user assumes we can find that one subject and wants a specific detail about IT.
+            - **Keywords:** Often uses singular nouns (e.g., "người đàn ông", "chiếc xe").
+            - **Test:** Can the question be answered by looking at only ONE frame? If yes, it's likely QNA.
+            - **Example:** "người đàn ông đang cầm vật gì trên tay?" (Asks about ONE specific man)
+            - **Example:** "What color is THE car?"
 
-        2.  **TRAKE (Temporal Alignment):** The query explicitly asks for a an ordered SEQUENCE of SEVERAL DIFFERENT actions or events. It often contains numbers (1), (2) or keywords like "sau đó", "tiếp theo".
-            - Example: "tìm cảnh người đàn ông (1) đứng lên, (2) đi ra cửa, và (3) mở cửa"
-            - Example: "a car starts, accelerates, then stops"
+        2.  **TRACK_VQA (Tracking & VQA - Plural/Collection):** The query asks a question that requires finding a COLLECTION of objects/events first, and then AGGREGATING information about them.
+            - **Keywords:** Often uses plural nouns ("những chiếc xe", "các con lân") or aggregation words ("đếm", "bao nhiêu", "liệt kê", "tất cả", "mỗi").
+            - **Test:** Does the user need to see MULTIPLE moments to get the final answer? If yes, it's TRACK_VQA.
+            - **Example:** "đếm xem có bao nhiêu chiếc xe màu đỏ" (Must find ALL red cars, then count)
+            - **Example:** "liệt kê màu của tất cả các con lân" (Must find ALL lions, then list their colors)
 
-        3.  **TRACK_VQA (Tracking & VQA):** The query requires two stages: first, FINDING ALL instances of an object/event, and then AGGREGATING information about them (e.g., counting them, listing their colors, summarizing their actions). It's a question about a COLLECTION of things.
-            - Keywords: "đếm", "có bao nhiêu", "liệt kê", "tất cả", "những con/cái nào".
-            - Example: "đếm xem có bao nhiêu chiếc xe màu đỏ trên đường cao tốc" (Find all red cars, then count)
-            - Example: "liệt kê màu sắc của tất cả các con lân trong buổi biểu diễn" (Find all lions, then list their colors)
+        3.  **TRAKE (Temporal Alignment):** Asks for a SEQUENCE of DIFFERENT actions in a specific order.
+            - **Example:** "tìm cảnh người (1) đứng lên và (2) rời đi"
 
-        4.  **KIS (Knowledge Intensive Search):** The default category. The query is a simple descriptive statement. It is NOT a direct question and NOT a sequence and NOT a request for aggregation.
-            - Example: "cảnh múa lân"
-            - Example: "người đàn ông phát biểu ở mỹ"
+        4.  **KIS (Knowledge Intensive Search):** A simple description of a scene. Not a question, not a sequence, not a request for aggregation.
+            - **Example:** "cảnh múa lân"
 
         **Your Task:**
-        Analyze the following query and return ONLY the category as a single word: KIS, QNA, TRAKE, or TRACK_VQA.
+        Analyze the following query and return ONLY the category as a single word.
 
         **Query:** "{query}"
         **Category:**
         """
         try:
-            # Sử dụng hàm chat completion đã có
             response = self._openai_chat_completion([{"role": "user", "content": prompt}], is_json=False)
             task_type = response.strip().upper()
             
-            # Kiểm tra xem kết quả trả về có hợp lệ không
             if task_type in ["KIS", "QNA", "TRAKE", "TRACK_VQA"]:
                 print(f"--- ✅ Phân loại truy vấn (OpenAI): '{query}' -> {task_type} ---")
                 return task_type
                 
             print(f"--- ⚠️ Phân loại không hợp lệ từ OpenAI: '{task_type}'. Fallback về Heuristic. ---")
-            return self._analyze_query_heuristic_fallback(query) # Vẫn giữ fallback
+            return self._analyze_query_heuristic_fallback(query)
 
         except Exception as e:
             print(f"Lỗi OpenAI analyze_task_type: {e}. Fallback về Heuristic.")
             return self._analyze_query_heuristic_fallback(query)
 
-    # Cập nhật hàm fallback heuristic để nó không bao giờ trả về TRACK_VQA
     def _analyze_query_heuristic_fallback(self, query: str) -> str:
         """
         Hàm heuristic dự phòng. Sẽ không phân loại TRACK_VQA, để an toàn.
         """
         query_lower = query.lower().strip()
-        qna_keywords = ['màu gì', 'ai là', 'ai đang', 'ở đâu', 'khi nào', 'tại sao', 'cái gì', 'bao nhiêu']
+        
+        # Các từ khóa mạnh của TRACK_VQA
+        track_vqa_keywords = ["đếm", "bao nhiêu", "liệt kê", "tất cả các", "những con", "những cái"]
+        if any(k in query_lower for k in track_vqa_keywords):
+            return "TRACK_VQA" # Heuristic có thể thử phân loại TRACK_VQA với các từ khóa mạnh
+
+        # Heuristic cho QNA
+        qna_keywords = ['màu gì', 'ai là', 'ai đang', 'ở đâu', 'khi nào', 'tại sao', 'cái gì']
         if '?' in query or any(query_lower.startswith(k) for k in qna_keywords):
-            # Lưu ý: "bao nhiêu" có thể là TRACK_VQA, nhưng trong heuristic ta ưu tiên QNA cho an toàn
             return "QNA"
+        
+        # Heuristic cho TRAKE
         trake_pattern = r'\(\d+\)|bước \d+|\d\.'
         if re.search(trake_pattern, query_lower) or "tìm các khoảnh khắc" in query_lower:
             return "TRAKE"
+        
         return "KIS"
 
     def perform_vqa(self, image_path: str, question: str) -> Dict[str, any]:

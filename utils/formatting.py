@@ -9,7 +9,7 @@ from search_core.task_analyzer import TaskType
 def format_results_for_gallery(response: Dict[str, Any]) -> List[tuple]:
     """
     Định dạng kết quả thô thành định dạng phù hợp cho gr.Gallery.
-    *** PHIÊN BẢN CÓ HIỂN THỊ VQA TỰ ĐỘNG ***
+    *** PHIÊN BẢN MỚI: Xử lý kết quả tổng hợp TRACK_VQA ***
     """
     task_type = response.get("task_type")
     results = response.get("results", [])
@@ -18,57 +18,43 @@ def format_results_for_gallery(response: Dict[str, Any]) -> List[tuple]:
 
     if not results:
         return []
-
-    if task_type == TaskType.KIS or task_type == TaskType.QNA:
-        for res in results:
+        
+    # Duyệt qua tất cả các kết quả trả về
+    for res in results:
+        # --- LOGIC XỬ LÝ MỚI ---
+        if res.get("is_aggregated_result"):
+            # Nếu đây là kết quả tổng hợp của TRACK_VQA
+            final_answer = res.get("final_answer", "Không có câu trả lời.")
+            short_answer = (final_answer[:100] + '...') if len(final_answer) > 103 else final_answer
+            caption = (f"💡 **Kết quả Phân tích Tổng hợp**\n{short_answer}")
+            
+            keyframe_path = res.get("keyframe_path") # Lấy đường dẫn ảnh đại diện
+            if keyframe_path and os.path.isfile(keyframe_path):
+                formatted_gallery.append((keyframe_path, caption))
+            else:
+                # Nếu không có ảnh bằng chứng, không hiển thị gì trong gallery
+                # Thông tin sẽ được hiển thị ở status_output hoặc detailed_info
+                pass
+        
+        elif res.get("video_id"): # Xử lý cho KIS, QNA, TRAKE (kết quả frame đơn lẻ)
             scores = res.get('scores', {})
             final_score = res.get('final_score', 0)
             
             answer_text = ""
-            if task_type == TaskType.QNA:
+            if task_type == TaskType.QNA and "answer" in res:
                 answer = res.get('answer', '...')
                 short_answer = (answer[:30] + '...') if len(answer) > 33 else answer
                 answer_text = f"\n💬 Đáp: {short_answer}"
-            
+
             caption = (
                 f"📹 {res.get('video_id', 'N/A')}\n"
                 f"⏰ {res.get('timestamp', 0):.1f}s | 🏆 {final_score:.3f}"
-                f"{answer_text}" # Thêm câu trả lời vào đây
+                f"{answer_text}"
             )
-            formatted_gallery.append((res.get('keyframe_path', ''), caption))
 
-    elif task_type == TaskType.TRAKE:
-        for i, seq_res in enumerate(results):
-            sequence = seq_res.get('sequence', [])
-            if not sequence:
-                continue
-            
-            first_frame = sequence[0]
-            final_score = seq_res.get('final_score', 0)
-            
-            caption = (
-                f"🎬 Chuỗi #{i+1} | Video: {seq_res.get('video_id', 'N/A')}\n"
-                f"🔢 {len(sequence)} bước | 🏆 Điểm TB: {final_score:.3f}\n"
-                f"➡️ Bắt đầu lúc: {first_frame.get('timestamp', 0):.1f}s"
-            )
-            formatted_gallery.append((first_frame.get('keyframe_path', ''), caption))
-        
-    elif task_type == TaskType.TRACK_VQA:
-        # Kết quả của TRACK_VQA chỉ có một item
-        agg_result = results[0] if results else None
-        if agg_result and agg_result.get("is_aggregated_result"):
-            final_answer = agg_result.get("final_answer", "Không có câu trả lời.")
-            # Rút gọn câu trả lời dài
-            short_answer = (final_answer[:100] + '...') if len(final_answer) > 103 else final_answer
-            
-            caption = (
-                f"💡 **Kết quả Tổng hợp**\n"
-                f"{short_answer}"
-            )
-            # Dùng ảnh bằng chứng đầu tiên làm ảnh đại diện
-            keyframe_path = agg_result.get("keyframe_path", "")
-            formatted_gallery.append((keyframe_path, caption))
-            return formatted_gallery # Trả về ngay lập tức
+            keyframe_path = res.get('keyframe_path')
+            if keyframe_path and os.path.isfile(keyframe_path):
+                formatted_gallery.append((keyframe_path, caption))
 
     return formatted_gallery
 

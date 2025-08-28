@@ -123,14 +123,43 @@ class MasterSearcher:
                     candidates_to_retrieve=track_vqa_retrieval,
                     candidates_to_analyze=track_vqa_candidates_to_analyze
                 )
-                # Định dạng lại kết quả để UI có thể hiển thị
+                
+                evidence_frames = track_vqa_result.get("evidence_frames", [])
+                
+                # --- LOGIC "LÀM PHẲNG" DỮ LIỆU BẮT ĐẦU TỪ ĐÂY ---
+
+                # 1. Tạo một danh sách các đường dẫn ảnh (chỉ string)
+                evidence_paths = [
+                    frame.get('keyframe_path') 
+                    for frame in evidence_frames 
+                    if frame.get('keyframe_path') and os.path.isfile(frame.get('keyframe_path'))
+                ]
+                
+                # 2. Tạo một danh sách các chú thích (chỉ string)
+                evidence_captions = [
+                    f"{frame.get('video_id', 'N/A')} @{frame.get('timestamp', 0):.1f}s"
+                    for frame in evidence_frames
+                    if frame.get('keyframe_path') and os.path.isfile(frame.get('keyframe_path'))
+                ]
+
+                # 3. Tạo một "kết quả ảo" duy nhất chứa dữ liệu đã được làm phẳng
                 final_results = [{
                     "is_aggregated_result": True,
                     "final_answer": track_vqa_result.get("final_answer", "Lỗi tổng hợp kết quả."),
-                    "evidence_frames": track_vqa_result.get("evidence_frames", []),
-                    "keyframe_path": track_vqa_result["evidence_frames"][0]['keyframe_path'] if track_vqa_result.get("evidence_frames") else "",
-                    "video_id": track_vqa_result["evidence_frames"][0]['video_id'] if track_vqa_result.get("evidence_frames") else "N/A",
-                    "timestamp": 0.0, "final_score": 1.0, "scores": {}
+                    
+                    # Thay thế list of dicts phức tạp bằng các list of strings đơn giản
+                    "evidence_paths": evidence_paths, 
+                    "evidence_captions": evidence_captions,
+                    
+                    # Cung cấp keyframe đầu tiên để gallery có ảnh đại diện.
+                    # Đảm bảo nó là None nếu không có bằng chứng nào hợp lệ.
+                    "keyframe_path": evidence_paths[0] if evidence_paths else None,
+                    
+                    # Cung cấp các thông tin giả để các hàm khác không bị lỗi
+                    "video_id": "Tổng hợp",
+                    "timestamp": 0.0,
+                    "final_score": 1.0, # Điểm cao nhất vì đây là kết quả cuối cùng
+                    "scores": {}
                 }]
             else:
                 print("--- ⚠️ TrackVQA handler chưa được kích hoạt. Fallback về KIS. ---")

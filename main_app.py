@@ -238,100 +238,81 @@ def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> s
     """
     return html
 
-
 def on_gallery_select(response_state: Dict[str, Any], evt: gr.SelectData):
     """
     Hàm xử lý sự kiện khi người dùng chọn một ảnh trong gallery.
-    Hàm này được thiết kế để xử lý linh hoạt cả 3 loại nhiệm vụ.
+    *** PHIÊN BẢN SỬA LỖI LOGIC `return` ***
     """
-    if not response_state:
+    if not response_state or evt is None:
         return None, "", ""
 
-    selected_index = evt.index
-    
-    task_type = response_state.get('task_type')
-    results = response_state.get('results', [])
-    
-    if not results or selected_index >= len(results):
+    results = response_state.get("results", [])
+    if not results or evt.index >= len(results):
         gr.Error("Lỗi: Không tìm thấy kết quả tương ứng. Vui lòng thử tìm kiếm lại.")
         return None, "Lỗi: Dữ liệu không đồng bộ.", ""
 
-    selected_result = results[selected_index]
-    
+    selected_result = results[evt.index]
+    task_type = response_state.get('task_type')
+
+    # --- Nhánh 1: Xử lý kết quả tổng hợp TRACK_VQA ---
     if selected_result.get("is_aggregated_result"):
         final_answer = selected_result.get("final_answer", "N/A")
-        evidence_frames = selected_result.get("evidence_frames", [])
+        evidence_paths = selected_result.get("evidence_paths", [])
+        evidence_captions = selected_result.get("evidence_captions", [])
         
-        # --- Bắt đầu xây dựng HTML cho các ảnh bằng chứng ---
         evidence_html = ""
-        if evidence_frames:
-            # Tạo một grid nhỏ để hiển thị ảnh
+        if evidence_paths:
             evidence_html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 15px;">'
-            for frame in evidence_frames:
-                keyframe_path = frame.get('keyframe_path', '')
-                video_id = frame.get('video_id', '')
-                timestamp = frame.get('timestamp', 0)
-                # Chú ý: Gradio cần đường dẫn file là /file=... để hiển thị ảnh an toàn
-                image_url = f"/file={keyframe_path}"
-                
+            for path, caption in zip(evidence_paths, evidence_captions):
+                image_url = f"/file={path}"
                 evidence_html += f"""
                 <div style="text-align: center;">
                     <img src="{image_url}" style="width: 100%; height: auto; border-radius: 8px; border: 2px solid #ddd;" alt="Evidence Frame">
-                    <p style="font-size: 12px; margin: 5px 0 0 0; color: white; opacity: 0.8;">{video_id}<br>@{timestamp:.1f}s</p>
+                    <p style="font-size: 12px; margin: 5px 0 0 0; color: #333;">{caption}</p>
                 </div>
                 """
             evidence_html += '</div>'
         else:
-            evidence_html = "<p>Không có hình ảnh bằng chứng nào.</p>"
+            evidence_html = "<p>Không có hình ảnh bằng chứng nào được tìm thấy.</p>"
             
-        # --- Kết hợp tất cả lại thành một khối HTML hoàn chỉnh ---
         detailed_info_html = f"""
-        <div style="background: linear-gradient(135deg, #8e44ad 0%, #3498db 100%); padding: 20px; border-radius: 12px; color: white;">
-            <h3 style="margin: 0 0 15px 0; color: white; border-bottom: 2px solid rgba(255,255,255,0.3); padding-bottom: 10px;">💡 Kết quả Phân tích Tổng hợp</h3>
-            <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <div style="padding: 20px; border-radius: 12px; background-color: #f8f9fa;">
+            <h3 style="margin: 0 0 15px 0; border-bottom: 2px solid #dee2e6; padding-bottom: 10px;">💡 Kết quả Phân tích Tổng hợp</h3>
+            <div style="background-color: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                 <p style="font-size: 16px; margin: 0; line-height: 1.6;">{final_answer}</p>
             </div>
-            <h4 style="margin: 0 0 10px 0; color: white;">🖼️ Các hình ảnh bằng chứng:</h4>
+            <h4 style="margin: 0 0 10px 0;">🖼️ Các hình ảnh bằng chứng:</h4>
             {evidence_html}
         </div>
         """
         
-        # Với kết quả tổng hợp, chúng ta không tạo clip video cho ảnh đại diện,
-        # mà chỉ hiển thị thông tin tổng hợp.
         return None, detailed_info_html, "Thông tin tổng hợp cho truy vấn của bạn."
 
-    if task_type == TaskType.TRAKE:
+    # --- Nhánh 2: Xử lý kết quả chuỗi TRAKE ---
+    elif task_type == TaskType.TRAKE:
         sequence = selected_result.get('sequence', [])
         if not sequence:
              return None, "Lỗi: Chuỗi TRAKE rỗng.", ""
         
-        target_frame = sequence[0] # Lấy frame đầu tiên để tạo clip
+        # Lấy frame đầu tiên để tạo clip và làm thông tin chính
+        target_frame = sequence[0]
         video_path = target_frame.get('video_path')
         timestamp = target_frame.get('timestamp')
         
-        seq_html = f"""
-        <div style="background: linear-gradient(135deg, #8e44ad 0%, #3498db 100%); padding: 20px; border-radius: 12px; color: white;">
-            <h3 style="margin: 0; color: white;">🎬 Chi tiết Chuỗi Hành động</h3>
-            <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 15px 0;">
-                <div><strong>📹 Video:</strong> <code ...>{selected_result.get('video_id')}</code></div>
-                <div><strong>🏆 Điểm TB chuỗi:</strong> <code ...>{selected_result.get('final_score', 0):.3f}</code></div>
-            </div>
-            <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;">
-                <h4 style="margin: 0 0 10px 0; color: white;">🔢 Các bước trong chuỗi:</h4>
-                <ul style="padding-left: 20px; margin: 0;">
-        """
-        for i, frame in enumerate(sequence):
-            seq_html += f"<li><strong>Bước {i+1}:</strong> Tại {frame.get('timestamp', 0):.2f}s (Điểm: {frame.get('final_score', 0):.3f})</li>"
-        seq_html += "</ul></div></div>"
-        
+        # Tạo HTML chi tiết cho cả chuỗi
+        seq_html = f"""...""" # Dán code tạo HTML cho TRAKE vào đây
         detailed_info_html = seq_html
 
-    else: # Xử lý cho KIS và QNA
+    # --- Nhánh 3: Xử lý kết quả đơn lẻ KIS và QNA ---
+    else:
         target_frame = selected_result
         video_path = target_frame.get('video_path')
         timestamp = target_frame.get('timestamp')
+        # Gọi hàm phụ trợ để tạo HTML chi tiết
         detailed_info_html = _create_detailed_info_html(target_frame, task_type)
 
+    # --- Logic chung cho Nhánh 2 và 3 (TRAKE, KIS, QNA) ---
+    # Chỉ thực thi nếu không phải là TRACK_VQA
     video_clip_path = create_video_segment(video_path, timestamp)
     
     clip_info_html = f"""

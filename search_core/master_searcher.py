@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional
+import os
 import google.generativeai as genai # Vẫn cần cho type hinting nếu dùng Gemini
 from google.api_core import exceptions as google_exceptions
 
@@ -125,7 +126,11 @@ class MasterSearcher:
                 )
                 
                 evidence_frames = track_vqa_result.get("evidence_frames", [])
-                
+                for frame in evidence_frames:   
+                    path = frame.get('keyframe_path')
+                    if path:
+                        is_file = os.path.isfile(path)
+                        print(f"DEBUG: Checking path '{path}'... Found: {is_file}") # <-- THÊM DÒNG NÀY
                 # --- LOGIC "LÀM PHẲNG" DỮ LIỆU BẮT ĐẦU TỪ ĐÂY ---
 
                 # 1. Tạo một danh sách các đường dẫn ảnh (chỉ string)

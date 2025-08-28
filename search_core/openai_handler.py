@@ -98,33 +98,27 @@ class OpenAIHandler:
 
     def analyze_task_type(self, query: str) -> str:
         """
-        Phân loại truy vấn thành 'KIS', 'QNA', 'TRAKE', hoặc 'TRACK_VQA' với độ chính xác cao.
-        *** PHIÊN BẢN NÂNG CẤP VỚI TRACK_VQA ***
+        Phân loại truy vấn với Quy tắc Ưu tiên để xử lý các trường hợp lai.
         """
         prompt = f"""
-        You are an expert query classifier for a sophisticated video search system. Your task is to analyze a Vietnamese user query and classify it into one of four precise categories: "KIS", "QNA", "TRAKE", or "TRACK_VQA".
+        You are a highly precise query classifier. Your task is to classify a Vietnamese query into one of four categories: TRACK_VQA, TRAKE, QNA, or KIS. You MUST follow a strict priority order.
 
-        **Category Definitions:**
+        **Priority Order for Classification (Check from top to bottom):**
 
-        1.  **QNA (Question Answering):** The query MUST be a direct question about a SINGLE, specific, implicitly defined scene. The user wants one answer about one moment.
-            - Example: "người đàn ông mặc áo gì trong buổi họp báo?" (Asks about one specific man)
-            - Example: "What color is the car?"
+        1.  **Check for TRACK_VQA first:** Does the query ask a question about a COLLECTION of items, requiring aggregation (counting, listing, summarizing)? Look for keywords like "đếm", "bao nhiêu", "liệt kê", "tất cả", "mỗi", or plural subjects. If it matches, classify as **TRACK_VQA** and stop.
+            - Example: "trong buổi trình diễn múa lân, đếm xem có bao nhiêu con lân" -> This is a request to count a collection, so it is **TRACK_VQA**.
 
-        2.  **TRAKE (Temporal Alignment):** The query explicitly asks for a an ordered SEQUENCE of SEVERAL DIFFERENT actions or events. It often contains numbers (1), (2) or keywords like "sau đó", "tiếp theo".
-            - Example: "tìm cảnh người đàn ông (1) đứng lên, (2) đi ra cửa, và (3) mở cửa"
-            - Example: "a car starts, accelerates, then stops"
+        2.  **Then, check for TRAKE:** If it's not TRACK_VQA, does the query ask for a SEQUENCE of DIFFERENT, ordered actions? Look for patterns like "(1)...(2)...", "bước 1... bước 2", "sau đó". If it matches, classify as **TRAKE** and stop.
+            - Example: "người đàn ông đứng lên rồi bước đi"
 
-        3.  **TRACK_VQA (Tracking & VQA):** The query requires two stages: first, FINDING ALL instances of an object/event, and then AGGREGATING information about them (e.g., counting them, listing their colors, summarizing their actions). It's a question about a COLLECTION of things.
-            - Keywords: "đếm", "có bao nhiêu", "liệt kê", "tất cả", "những con/cái nào".
-            - Example: "đếm xem có bao nhiêu chiếc xe màu đỏ trên đường cao tốc" (Find all red cars, then count)
-            - Example: "liệt kê màu sắc của tất cả các con lân trong buổi biểu diễn" (Find all lions, then list their colors)
+        3.  **Then, check for QNA:** If it's not TRACK_VQA or TRAKE, is it a direct question about a SINGLE item? Look for a question mark "?" or interrogative words like "cái gì", "ai". If it matches, classify as **QNA** and stop.
+            - Example: "người phụ nữ mặc áo màu gì?"
 
-        4.  **KIS (Knowledge Intensive Search):** The default category. The query is a simple descriptive statement. It is NOT a direct question and NOT a sequence and NOT a request for aggregation.
+        4.  **Default to KIS:** If the query does not meet any of the criteria above, it is a simple description of a scene. Classify as **KIS**.
             - Example: "cảnh múa lân"
-            - Example: "người đàn ông phát biểu ở mỹ"
 
         **Your Task:**
-        Analyze the following query and return ONLY the category as a single word: KIS, QNA, TRAKE, or TRACK_VQA.
+        Follow the priority order strictly. Analyze the query below and return ONLY the final category as a single word.
 
         **Query:** "{query}"
         **Category:**

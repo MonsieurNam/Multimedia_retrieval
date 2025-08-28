@@ -76,12 +76,30 @@ class MasterSearcher:
 
     def search(self, query: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Hàm tìm kiếm chính, điều phối toàn bộ pipeline lai.
+        Hàm tìm kiếm chính, nhận một dictionary config để tùy chỉnh hành vi.
+        *** PHIÊN BẢN HOÀN THIỆN TÍCH HỢP ĐẦY ĐỦ CONFIG TỪ UI ***
         """
-        # --- Bước 1: Phân tích Truy vấn (Luôn dùng Gemini Text Handler) ---
+        # --- Bước 1: Giải nén toàn bộ Config từ UI với giá trị mặc định an toàn ---
+        top_k_final = int(config.get('top_k_final', 12))
+        
+        # KIS config
+        kis_retrieval = int(config.get('kis_retrieval', 100))
+        
+        # VQA config
+        vqa_candidates_to_rank = int(config.get('vqa_candidates', 8))
+        vqa_retrieval = int(config.get('vqa_retrieval', 200))
+
+        # TRAKE config
+        trake_candidates_per_step = int(config.get('trake_candidates_per_step', 15))
+        trake_max_sequences = int(config.get('trake_max_sequences', 50))
+
+        # Track-VQA config
+        track_vqa_retrieval = int(config.get('track_vqa_retrieval', 300))
+        track_vqa_candidates_to_analyze = int(config.get('track_vqa_candidates', 50))
+
+        # --- Bước 2: Phân tích Truy vấn (giữ nguyên) ---
         query_analysis = {}
         task_type = TaskType.KIS
-
         if self.ai_enabled and self.gemini_handler:
             print("--- ✨ Bắt đầu phân tích truy vấn bằng Gemini Text Handler... ---")
             query_analysis = self.gemini_handler.enhance_query(query)
@@ -94,12 +112,17 @@ class MasterSearcher:
         print(f"--- Đã phân loại truy vấn là: {task_type.value} ---")
 
         final_results = []
-        top_k_final = config.get('top_k_final', 12)
         search_context = query_analysis.get('search_context', query)
+
+        # --- Bước 3: Khối Điều phối Logic (Cập nhật để truyền Config) ---
 
         if task_type == TaskType.TRACK_VQA:
             if self.track_vqa_solver:
-                track_vqa_result = self.track_vqa_solver.solve(query_analysis)
+                track_vqa_result = self.track_vqa_solver.solve(
+                    query_analysis,
+                    candidates_to_retrieve=track_vqa_retrieval,
+                    candidates_to_analyze=track_vqa_candidates_to_analyze
+                )
                 # Định dạng lại kết quả để UI có thể hiển thị
                 final_results = [{
                     "is_aggregated_result": True,
@@ -117,21 +140,22 @@ class MasterSearcher:
             if self.trake_solver:
                 sub_queries = self.trake_solver.decompose_query(query)
                 final_results = self.trake_solver.find_sequences(
-                    sub_queries, self.semantic_searcher, 
-                    top_k_per_step=config.get('trake_candidates_per_step', 15),
-                    max_sequences=config.get('trake_max_sequences', 50)
+                    sub_queries, 
+                    self.semantic_searcher, 
+                    top_k_per_step=trake_candidates_per_step,
+                    max_sequences=trake_max_sequences
                 )
             else:
-                print("--- ⚠️ TRAKE handler chưa được kích hoạt. Fallback về KIS. ---")
-                task_type = TaskType.KIS
+                task_type = TaskType.KIS # Fallback
 
         if task_type == TaskType.QNA:
-            candidates = self.semantic_searcher.search(
-                query_text=search_context,
-                precomputed_analysis=query_analysis,
-                top_k_final=config.get('vqa_candidates', 8),
-                top_k_retrieval=config.get('vqa_retrieval', 200)
-            )
+            if self.openai_handler:
+                candidates = self.semantic_searcher.search(
+                    query_text=search_context,
+                    precomputed_analysis=query_analysis,
+                    top_k_final=vqa_candidates_to_rank,
+                    top_k_retrieval=vqa_retrieval
+                )
             specific_question = query_analysis.get('specific_question', query)
             vqa_enhanced_candidates = []
             for cand in candidates:
@@ -150,10 +174,8 @@ class MasterSearcher:
                 query_text=search_context,
                 precomputed_analysis=query_analysis,
                 top_k_final=top_k_final, 
-                top_k_retrieval=config.get('kis_retrieval', 100)
+                top_k_retrieval=kis_retrieval
             )
-
-        # --- Bước 3: Trả về kết quả cuối cùng ---
         return {
             "task_type": task_type,
             "results": final_results,

@@ -193,13 +193,9 @@ class OpenAIHandler:
             return {"answer": "Lỗi: Không thể xử lý ảnh", "confidence": 0.0}
 
         prompt = f"""
-        You are a Visual Question Answering assistant. Based on the provided image, answer the user's question.
-        
-        **Your task is to return ONLY a valid JSON object** with two keys: "answer" and "confidence".
-        - "answer": A short, direct answer in Vietnamese.
-        - "confidence": Your confidence in the answer, from 0.0 (very unsure) to 1.0 (certain).
-
-        **User's Question:** "{question}"
+        Analyze the image and answer the question in Vietnamese.
+        Return a JSON object with two keys: "answer" (string) and "confidence" (float).
+        Question: "{question}"
         """
         
         messages = [

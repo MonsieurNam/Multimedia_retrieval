@@ -250,6 +250,48 @@ def on_gallery_select(response_state: Dict[str, Any], evt: gr.SelectData):
         return None, "Lỗi: Dữ liệu không đồng bộ.", ""
 
     selected_result = results[selected_index]
+    
+    if selected_result.get("is_aggregated_result"):
+        final_answer = selected_result.get("final_answer", "N/A")
+        evidence_frames = selected_result.get("evidence_frames", [])
+        
+        # --- Bắt đầu xây dựng HTML cho các ảnh bằng chứng ---
+        evidence_html = ""
+        if evidence_frames:
+            # Tạo một grid nhỏ để hiển thị ảnh
+            evidence_html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 15px;">'
+            for frame in evidence_frames:
+                keyframe_path = frame.get('keyframe_path', '')
+                video_id = frame.get('video_id', '')
+                timestamp = frame.get('timestamp', 0)
+                # Chú ý: Gradio cần đường dẫn file là /file=... để hiển thị ảnh an toàn
+                image_url = f"/file={keyframe_path}"
+                
+                evidence_html += f"""
+                <div style="text-align: center;">
+                    <img src="{image_url}" style="width: 100%; height: auto; border-radius: 8px; border: 2px solid #ddd;" alt="Evidence Frame">
+                    <p style="font-size: 12px; margin: 5px 0 0 0; color: white; opacity: 0.8;">{video_id}<br>@{timestamp:.1f}s</p>
+                </div>
+                """
+            evidence_html += '</div>'
+        else:
+            evidence_html = "<p>Không có hình ảnh bằng chứng nào.</p>"
+            
+        # --- Kết hợp tất cả lại thành một khối HTML hoàn chỉnh ---
+        detailed_info_html = f"""
+        <div style="background: linear-gradient(135deg, #8e44ad 0%, #3498db 100%); padding: 20px; border-radius: 12px; color: white;">
+            <h3 style="margin: 0 0 15px 0; color: white; border-bottom: 2px solid rgba(255,255,255,0.3); padding-bottom: 10px;">💡 Kết quả Phân tích Tổng hợp</h3>
+            <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <p style="font-size: 16px; margin: 0; line-height: 1.6;">{final_answer}</p>
+            </div>
+            <h4 style="margin: 0 0 10px 0; color: white;">🖼️ Các hình ảnh bằng chứng:</h4>
+            {evidence_html}
+        </div>
+        """
+        
+        # Với kết quả tổng hợp, chúng ta không tạo clip video cho ảnh đại diện,
+        # mà chỉ hiển thị thông tin tổng hợp.
+        return None, detailed_info_html, "Thông tin tổng hợp cho truy vấn của bạn."
 
     if task_type == TaskType.TRAKE:
         sequence = selected_result.get('sequence', [])

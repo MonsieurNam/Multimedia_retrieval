@@ -52,6 +52,23 @@ def format_results_for_gallery(response: Dict[str, Any]) -> List[tuple]:
                 f"➡️ Bắt đầu lúc: {first_frame.get('timestamp', 0):.1f}s"
             )
             formatted_gallery.append((first_frame.get('keyframe_path', ''), caption))
+        
+    elif task_type == TaskType.TRACK_VQA:
+        # Kết quả của TRACK_VQA chỉ có một item
+        agg_result = results[0] if results else None
+        if agg_result and agg_result.get("is_aggregated_result"):
+            final_answer = agg_result.get("final_answer", "Không có câu trả lời.")
+            # Rút gọn câu trả lời dài
+            short_answer = (final_answer[:100] + '...') if len(final_answer) > 103 else final_answer
+            
+            caption = (
+                f"💡 **Kết quả Tổng hợp**\n"
+                f"{short_answer}"
+            )
+            # Dùng ảnh bằng chứng đầu tiên làm ảnh đại diện
+            keyframe_path = agg_result.get("keyframe_path", "")
+            formatted_gallery.append((keyframe_path, caption))
+            return formatted_gallery # Trả về ngay lập tức
 
     return formatted_gallery
 

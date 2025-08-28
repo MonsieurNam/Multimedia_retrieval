@@ -39,15 +39,9 @@ class TrackVQASolver:
         self.searcher = semantic_searcher
 
 
-    def solve(self, query_analysis: Dict[str, Any]) -> Dict[str, Any]:
+    def solve(self, query_analysis: Dict[str, Any], candidates_to_retrieve: int, candidates_to_analyze: int) -> Dict[str, Any]:
         """
         Thực thi toàn bộ pipeline Track-VQA.
-
-        Args:
-            query_analysis (Dict[str, Any]): Dictionary kết quả phân tích từ AI Handler.
-
-        Returns:
-            Dict[str, Any]: Một dictionary chứa câu trả lời cuối cùng và các frame bằng chứng.
         """
         print("--- 🔬 Bắt đầu pipeline Track-VQA ---")
         
@@ -56,20 +50,21 @@ class TrackVQASolver:
         if not search_context:
             return {"final_answer": "Lỗi: Không xác định được bối cảnh tìm kiếm.", "evidence_frames": []}
 
-        print(f"   -> 1/4: Đang truy xuất các khoảnh khắc cho context: '{search_context}'")
-        # Lấy một lượng lớn ứng viên để tăng độ bao phủ
+        print(f"   -> 1/4: Đang truy xuất {candidates_to_retrieve} khoảnh khắc cho context: '{search_context}'")
+        
+        # Sử dụng các tham số từ config
         candidates = self.searcher.search(
             query_text=search_context, 
             precomputed_analysis=query_analysis,
-            top_k_final=50, # Lấy 50 ứng viên tốt nhất để phân tích
-            top_k_retrieval=300
+            top_k_final=candidates_to_retrieve, # Lấy số lượng lớn ban đầu
+            top_k_retrieval=candidates_to_retrieve # Có thể đặt bằng nhau hoặc tinh chỉnh thêm
         )
         if not candidates:
              return {"final_answer": "Không tìm thấy khoảnh khắc nào phù hợp.", "evidence_frames": []}
 
-        # --- 2. Lọc và Gom cụm (TODO trong tương lai) ---
-        # Hiện tại, chúng ta sẽ xử lý 10 ứng viên hàng đầu để cân bằng tốc độ và độ chính xác
-        moments_to_analyze = candidates[:10]
+        # --- 2. Lọc và Gom cụm ---
+        # Lấy số lượng ứng viên để phân tích từ config
+        moments_to_analyze = candidates[:candidates_to_analyze]
         print(f"   -> 2/4: Đã chọn ra {len(moments_to_analyze)} khoảnh khắc hàng đầu để thực hiện VQA.")
 
         # --- 3. Thực hiện VQA lặp lại trên từng khoảnh khắc ---
@@ -133,11 +128,9 @@ class TrackVQASolver:
         **Synthesized Final Answer (in Vietnamese):**
         """
         
-        # Gọi API của ai_handler để nhận câu trả lời tổng hợp
-        # Ở đây, chúng ta không cần JSON
         try:
-            response = self.text_handler._gemini_text_call([{"role": "user", "content": prompt}], is_json=False)
-            return response.text if hasattr(response, 'text') else str(response)
+            response = self.text_handler._gemini_text_call(prompt)
+            return response.text
         except Exception as e:
             print(f"--- ⚠️ Lỗi khi tổng hợp câu trả lời: {e} ---")
-            return "Không thể tổng hợp kết quả."
+            return "Không thể tổng hợp. Các quan sát riêng lẻ: " + ", ".join(answers)

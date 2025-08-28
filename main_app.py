@@ -27,7 +27,20 @@ from utils import (
     format_for_submission,
     generate_submission_file
 )
+import base64
 
+def encode_image_to_base64(image_path: str) -> str:
+    """Mã hóa một file ảnh thành chuỗi base64 để nhúng vào HTML."""
+    if not image_path or not os.path.isfile(image_path):
+        return ""
+    try:
+        with open(image_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+            return f"data:image/jpeg;base64,{encoded_string}"
+    except Exception as e:
+        print(f"--- ⚠️ Lỗi khi mã hóa ảnh {image_path}: {e} ---")
+        return ""
+    
 print("--- Giai đoạn 2/4: Đang cấu hình và khởi tạo Backend...")
 
 try:
@@ -264,10 +277,10 @@ def on_gallery_select(response_state: Dict[str, Any], evt: gr.SelectData):
         if evidence_paths:
             evidence_html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 15px;">'
             for path, caption in zip(evidence_paths, evidence_captions):
-                image_url = f"/file={path}"
+                image_base64_src = encode_image_to_base64(path)
                 evidence_html += f"""
                 <div style="text-align: center;">
-                    <img src="{image_url}" style="width: 100%; height: auto; border-radius: 8px; border: 2px solid #ddd;" alt="Evidence Frame">
+                    <img src="{image_base64_src}" style="width: 100%; height: auto; border-radius: 8px; border: 2px solid #ddd;" alt="Evidence Frame">
                     <p style="font-size: 12px; margin: 5px 0 0 0; color: #333;">{caption}</p>
                 </div>
                 """

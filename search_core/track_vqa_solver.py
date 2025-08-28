@@ -73,7 +73,7 @@ class TrackVQASolver:
             return {"final_answer": "Lỗi: Không xác định được câu hỏi cụ thể để phân tích.", "evidence_frames": []}
             
         print(f"   -> 3/4: Đang thực hiện VQA lặp lại với câu hỏi: '{specific_question}'")
-        instance_answers = []
+        successful_observations = [] 
         for moment in moments_to_analyze:
             # Chúng ta có thể thêm một khoảng chờ nhỏ ở đây để tránh rate limit
             time.sleep(0.5) 
@@ -83,14 +83,19 @@ class TrackVQASolver:
             # Lọc câu trả lời dựa trên độ tự tin
             if vqa_result and vqa_result.get('confidence', 0) > 0.6:
                 answer_text = vqa_result.get('answer', '')
-                instance_answers.append(answer_text)
+                successful_observations.append({
+                    "answer": vqa_result.get('answer', ''),
+                    "frame_info": moment 
+                })
                 print(f"     -> ✅ Kết quả được chấp nhận (Conf > 0.6): '{answer_text}'")
             else:
                 print(f"     -> ❌ Kết quả bị loại bỏ (Conf <= 0.6 hoặc lỗi).")
 
-        if not instance_answers:
-            return {"final_answer": "Không thể thu thập đủ thông tin từ các khoảnh khắc tìm thấy.", "evidence_frames": candidates[:5]}
-
+        if not successful_observations:
+            return {"final_answer": "Không thể thu thập đủ thông tin từ các khoảnh khắc.", "evidence_frames": []}
+        # Tách riêng danh sách câu trả lời để tổng hợp
+        instance_answers = [obs['answer'] for obs in successful_observations]
+        
         # --- 4. Tổng hợp các câu trả lời thành một kết quả duy nhất ---
         aggregation_instruction = query_analysis.get('aggregation_instruction')
         if not aggregation_instruction:
@@ -99,11 +104,13 @@ class TrackVQASolver:
         print(f"   -> 4/4: Đang tổng hợp {len(instance_answers)} câu trả lời...")
         final_answer = self.aggregate_answers(instance_answers, aggregation_instruction)
         
+        evidence_frames = [obs['frame_info'] for obs in successful_observations]
+        
         print(f"--- ✅ Pipeline Track-VQA hoàn tất! ---")
         
         return {
             "final_answer": final_answer,
-            "evidence_frames": candidates[:5] # Luôn trả về 5 frame bằng chứng tốt nhất
+            "evidence_frames": evidence_frames # Trả về các frame đã thực sự đóng góp vào câu trả lời
         }
 
     def aggregate_answers(self, answers: List[str], instruction: str) -> str:

@@ -1,10 +1,9 @@
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Set
 import json
 import re
 
-# Tái sử dụng decorator retrier của chúng ta
 from utils import api_retrier
 
 class GeminiTextHandler:
@@ -24,16 +23,14 @@ class GeminiTextHandler:
             model_name (str): Tên model Gemini sẽ sử dụng.
         """
         print(f"--- ✨ Khởi tạo Gemini Text Handler với model: {model_name} ---")
-        # Khởi tạo client riêng để quản lý kết nối
-        # Lưu ý: genai.configure là lệnh global, chỉ cần gọi một lần
         try:
             genai.configure(api_key=api_key)
             self.model = genai.GenerativeModel(model_name)
+            self.known_entities_prompt_segment = ""
             self.health_check() # Thực hiện health check ngay khi khởi tạo
             print("--- ✅ Gemini Text Handler đã được khởi tạo và xác thực thành công! ---")
         except Exception as e:
             print(f"--- ❌ Lỗi nghiêm trọng khi khởi tạo Gemini Text Handler: {e} ---")
-            # Ném lại lỗi để MasterSearcher có thể bắt và vô hiệu hóa các tính năng liên quan
             raise e
 
     @api_retrier(max_retries=3, initial_delay=1)
@@ -45,7 +42,8 @@ class GeminiTextHandler:
             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
-        response = self.model.generate_content(prompt, safety_settings=safety_settings)
+        generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
+        response = self.model.generate_content(prompt, safety_settings=safety_settings, generation_config=generation_config)
         return response
 
     def health_check(self):
@@ -57,7 +55,6 @@ class GeminiTextHandler:
             return True
         except Exception as e:
             print(f"--- ❌ Lỗi API Gemini: {e} ---")
-            # Ném lỗi để __init__ có thể bắt được
             raise e
 
     def analyze_task_type(self, query: str) -> str:
@@ -160,3 +157,78 @@ class GeminiTextHandler:
             return [query]
         except Exception:
             return [query]
+        
+    def load_known_entities(self, known_entities: Set[str]):
+        """
+        Chuẩn bị và cache lại phần prompt chứa từ điển đối tượng.
+        Chỉ cần gọi một lần khi MasterSearcher khởi tạo.
+        """
+        if not known_entities:
+            print("--- ⚠️ Từ điển đối tượng rỗng. Semantic Grounding sẽ không hoạt động. ---")
+            return
+        
+        # Sắp xếp để đảm bảo prompt nhất quán giữa các lần chạy
+        sorted_entities = sorted(list(known_entities))
+        # Định dạng thành chuỗi JSON để nhúng vào prompt
+        self.known_entities_prompt_segment = json.dumps(sorted_entities)
+        print(f"--- ✅ GeminiTextHandler: Đã nạp {len(sorted_entities)} thực thể vào bộ nhớ prompt. ---")
+
+    def perform_semantic_grounding(self, user_objects: List[str]) -> List[str]:
+        """
+        Sử dụng Gemini để "dịch" các đối tượng của người dùng sang các thực thể đã biết.
+        """
+        if not self.known_entities_prompt_segment or not user_objects:
+            return user_objects # Trả về như cũ nếu không có từ điển hoặc không có object
+
+        prompt = f"""
+        You are an AI assistant for a video search engine. Your task is to map a list of user-provided objects to a predefined list of "known entities".
+
+        Rules:
+        1. For each object in the user's list, find the BEST, most specific, single corresponding entity from the "Known Entities" list.
+        2. If an object is a specific type of a known entity, map it to the general entity (e.g., "poodle" -> "dog", "lamborghini" -> "car").
+        3. If an object is already a known entity, keep it as is.
+        4. If an object has NO reasonable mapping in the known list (e.g., "love", "happiness"), discard it.
+        5. The final list should not have duplicate entities.
+        6. Return ONLY a valid JSON array containing the final, mapped entities. Your entire response must be a single JSON array.
+
+        **Known Entities:**
+        {self.known_entities_prompt_segment}
+
+        **Example 1:**
+        User Objects: ["lamborghini", "a woman in a red shirt", "poodle"]
+        Expected JSON Result: ["car", "woman", "shirt", "dog"]
+
+        **Example 2:**
+        User Objects: ["happiness", "a big cat"]
+        Expected JSON Result: ["cat"]
+        ---
+        **Your Task:**
+        User Objects: {json.dumps(user_objects)}
+        Analyze and produce the JSON Result:
+        """
+        
+        try:
+            response = self._gemini_text_call(prompt)
+            # Vì đã yêu cầu response_mime_type="application/json", chúng ta có thể parse trực tiếp
+            # response.text sẽ là một chuỗi JSON
+            # Thêm một lớp bảo vệ để trích xuất JSON từ markdown block nếu có
+            raw_text = response.text
+            match = re.search(r"```json\s*(\[.*?\])\s*```", raw_text, re.DOTALL)
+            json_string = match.group(1) if match else raw_text
+
+            mapped_objects = json.loads(json_string)
+            
+            if isinstance(mapped_objects, list):
+                # Kiểm tra thêm để đảm bảo các phần tử là string
+                if all(isinstance(item, str) for item in mapped_objects):
+                    return mapped_objects
+            
+            print(f"--- ⚠️ Semantic Grounding: Kết quả trả về không phải là một list of strings. Fallback. Got: {mapped_objects} ---")
+            return user_objects
+
+        except (json.JSONDecodeError, ValueError) as e:
+             print(f"--- ⚠️ Semantic Grounding: Không thể parse JSON từ Gemini. Lỗi: {e}. Response: '{response.text}' ---")
+             return user_objects
+        except Exception as e:
+            print(f"--- ❌ Lỗi không xác định trong lúc thực hiện Semantic Grounding: {e} ---")
+            return user_objects

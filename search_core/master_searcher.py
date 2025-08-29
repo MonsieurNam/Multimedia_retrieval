@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional
 import os
+import json
 import google.generativeai as genai # Vẫn cần cho type hinting nếu dùng Gemini
 from google.api_core import exceptions as google_exceptions
 
@@ -22,7 +23,8 @@ class MasterSearcher:
     def __init__(self, 
                  basic_searcher: BasicSearcher, 
                  gemini_api_key: Optional[str] = None,
-                 openai_api_key: Optional[str] = None):
+                 openai_api_key: Optional[str] = None,
+                 entities_path: str = None):
         """
         Khởi tạo MasterSearcher và hệ sinh thái AI lai.
 
@@ -40,11 +42,24 @@ class MasterSearcher:
         self.trake_solver: Optional[TRAKESolver] = None
         self.track_vqa_solver: Optional[TrackVQASolver] = None
         self.ai_enabled = False
-
+        self.known_entities: set = set()
+        
+        if entities_path and os.path.exists(entities_path):
+            try:
+                print(f"--- 📚 Đang tải Từ điển Đối tượng từ: {entities_path} ---")
+                with open(entities_path, 'r') as f:
+                    entities_list = [entity.lower() for entity in json.load(f)]
+                    self.known_entities = set(entities_list)
+                print(f"--- ✅ Tải thành công {len(self.known_entities)} thực thể đã biết. ---")
+            except Exception as e:
+                print(f"--- ⚠️ Lỗi khi tải Từ điển Đối tượng: {e}. Tính năng Semantic Grounding sẽ bị vô hiệu hóa. ---")
+                
         # --- Khởi tạo và xác thực Gemini Handler cho các tác vụ TEXT ---
         if gemini_api_key:
             try:
                 self.gemini_handler = GeminiTextHandler(api_key=gemini_api_key)
+                if self.known_entities and self.gemini_handler:
+                    self.gemini_handler.load_known_entities(self.known_entities)
                 self.ai_enabled = True # Bật cờ AI nếu ít nhất một handler hoạt động
             except Exception as e:
                 print(f"--- ⚠️ Lỗi khi khởi tạo Gemini Handler: {e}. Các tính năng text AI sẽ bị hạn chế. ---")
@@ -98,12 +113,21 @@ class MasterSearcher:
         track_vqa_retrieval = int(config.get('track_vqa_retrieval', 200))
         track_vqa_candidates_to_analyze = int(config.get('track_vqa_candidates', 20))
 
-        # --- Bước 2: Phân tích Truy vấn (giữ nguyên) ---
+        # --- Bước 2: Phân tích Truy vấn ---
         query_analysis = {}
         task_type = TaskType.KIS
         if self.ai_enabled and self.gemini_handler:
             print("--- ✨ Bắt đầu phân tích truy vấn bằng Gemini Text Handler... ---")
             query_analysis = self.gemini_handler.enhance_query(query)
+            original_objects = query_analysis.get('objects_en', [])
+            if original_objects: # Chỉ gọi API nếu có object để xử lý
+                grounded_objects = self.gemini_handler.perform_semantic_grounding(original_objects)
+                
+                if original_objects != grounded_objects:
+                     print(f"--- 🧠 Semantic Grounding: {original_objects} -> {grounded_objects} ---")
+                
+                query_analysis['objects_en'] = grounded_objects
+                
             task_type_str = self.gemini_handler.analyze_task_type(query)
             try:
                 task_type = TaskType[task_type_str]

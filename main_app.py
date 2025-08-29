@@ -83,7 +83,8 @@ def initialize_backend():
     master_searcher = MasterSearcher(
             basic_searcher=basic_searcher,
             openai_api_key=OPENAI_API_KEY,
-            gemini_api_key=GEMINI_API_KEY
+            gemini_api_key=GEMINI_API_KEY,
+            entities_path=ALL_ENTITIES_PATH
         )    
     print("--- ✅ Backend đã khởi tạo thành công! ---")
     return master_searcher

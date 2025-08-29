@@ -120,7 +120,8 @@ class MasterSearcher:
         task_type = TaskType.KIS
         if self.ai_enabled and self.gemini_handler:
             print("--- ✨ Bắt đầu phân tích truy vấn bằng Gemini Text Handler... ---")
-            query_analysis = self.gemini_handler.enhance_query(query)
+            query_analysis = self.gemini_handler.analyze_query_fully(query)
+            
             original_objects = query_analysis.get('objects_en', [])
             if original_objects: # Chỉ gọi API nếu có object để xử lý
                 grounded_objects = self.gemini_handler.perform_semantic_grounding(original_objects)
@@ -130,7 +131,7 @@ class MasterSearcher:
                 
                 query_analysis['objects_en'] = grounded_objects
                 
-            task_type_str = self.gemini_handler.analyze_task_type(query)
+            task_type_str = query_analysis.get('task_type', 'KIS').upper()
             try:
                 task_type = TaskType[task_type_str]
             except KeyError:
@@ -230,7 +231,7 @@ class MasterSearcher:
                 vqa_enhanced_candidates.append(new_cand)
             final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
 
-        if task_type == TaskType.KIS: # Bắt các trường hợp KIS gốc và các fallback
+        if not final_results or task_type == TaskType.KIS:
             final_results = self.semantic_searcher.search(
                 query_text=search_context,
                 precomputed_analysis=query_analysis,

@@ -99,6 +99,63 @@ class GeminiTextHandler:
         except Exception:
             return "KIS" # Fallback an toàn
 
+    def analyze_query_fully(self, query: str) -> Dict[str, Any]:
+        """
+        Thực hiện phân tích toàn diện một truy vấn, bao gồm cả phân loại tác vụ,
+        trong MỘT lần gọi API duy nhất, yêu cầu output dạng JSON.
+        """
+        fallback_result = {
+            'task_type': 'KIS', 'search_context': query, 'specific_question': "",
+            'aggregation_instruction': "", 'objects_vi': [], 'objects_en': []
+        }
+        
+        prompt = f"""
+        You are a master Vietnamese query analyzer for a video search system. Analyze the user's query and return ONLY a single, valid JSON object with ALL the following keys: "task_type", "search_context", "specific_question", "aggregation_instruction", "objects_vi", "objects_en".
+
+        **Analysis Steps & Rules:**
+
+        1.  **Determine `task_type` FIRST (Strict Priority):**
+            - **TRACK_VQA:** Does it ask to aggregate (count, list, summarize) info about a COLLECTION of items across scenes? (e.g., "đếm số lân", "liệt kê tất cả các xe"). If yes, `task_type` is "TRACK_VQA".
+            - **TRAKE:** If not, does it ask for a SEQUENCE of distinct actions? (e.g., "đứng lên rồi đi ra"). If yes, `task_type` is "TRAKE".
+            - **QNA:** If not, is it a DIRECT QUESTION expecting a factual answer about a single scene? (e.g., "ai là người...", "màu gì?", "đang làm gì?"). If yes, `task_type` is "QNA".
+            - **KIS:** Otherwise, it's a descriptive search. `task_type` is "KIS".
+
+        2.  **Fill other keys based on `task_type`:**
+            - `search_context`: The general scene to search for. ALWAYS FILL THIS.
+            - `specific_question`: The specific question for a vision model. ONLY for QNA and TRACK_VQA.
+            - `aggregation_instruction`: The final goal. ONLY for TRACK_VQA.
+            - `objects_vi` & `objects_en`: Key nouns/entities from the query.
+
+        **Example 1 (QNA):**
+        Query: "ai là người đàn ông đội mũ đỏ đang phát biểu ở mỹ"
+        JSON: {{"task_type": "QNA", "search_context": "cảnh người đàn ông đội mũ đỏ đang phát biểu ở Mỹ", "specific_question": "ai là người đàn ông này?", "aggregation_instruction": "", "objects_vi": ["người đàn ông", "mũ đỏ", "phát biểu", "Mỹ"], "objects_en": ["man", "red hat", "speaking", "USA"]}}
+
+        **Example 2 (KIS):**
+        Query: "cảnh người đàn ông đội mũ đỏ phát biểu ở mỹ"
+        JSON: {{"task_type": "KIS", "search_context": "cảnh người đàn ông đội mũ đỏ phát biểu ở Mỹ", "specific_question": "", "aggregation_instruction": "", "objects_vi": ["người đàn ông", "mũ đỏ", "phát biểu", "Mỹ"], "objects_en": ["man", "red hat", "speaking", "USA"]}}
+        ---
+        **Your Task:**
+        Analyze the query below and generate the required JSON object.
+
+        **Query:** "{query}"
+        **JSON:**
+        """
+        try:
+            response = self._gemini_text_call(prompt)
+            raw_text = response.text
+            match = re.search(r"```json\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+            json_string = match.group(1) if match else raw_text
+            
+            result = json.loads(json_string)
+            if 'task_type' in result and 'search_context' in result:
+                return result
+            # Nếu JSON hợp lệ nhưng thiếu key, trả về fallback nhưng vẫn giữ lại những gì có
+            return {**fallback_result, **result}
+
+        except Exception as e:
+            print(f"Lỗi Gemini analyze_query_fully: {e}. Response: '{getattr(response, 'text', 'N/A')}'")
+            return fallback_result
+
     def enhance_query(self, query: str) -> Dict[str, Any]:
         """Phân tích và trích xuất thông tin truy vấn bằng Gemini."""
         fallback_result = {

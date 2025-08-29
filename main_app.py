@@ -611,18 +611,46 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
             # --- 2. Khu vực Tinh chỉnh Nâng cao ---
             with gr.Accordion("⚙️ Tùy chỉnh Nâng cao", open=False):
                 with gr.Tabs():
+                    # *** HOÀN THIỆN ĐỊNH NGHĨA CÁC SLIDER TẠI ĐÂY ***
                     with gr.TabItem("KIS / Chung"):
-                        kis_retrieval_slider = gr.Slider(...)
+                        kis_retrieval_slider = gr.Slider(
+                            minimum=50, maximum=500, value=100, step=25,
+                            label="Số ứng viên KIS ban đầu (Retrieval)",
+                            info="Lấy bao nhiêu ứng viên từ FAISS trước khi rerank cho KIS."
+                        )
                     with gr.TabItem("VQA"):
-                        vqa_candidates_slider = gr.Slider(...)
-                        vqa_retrieval_slider = gr.Slider(...)
+                        vqa_candidates_slider = gr.Slider(
+                            minimum=3, maximum=30, value=8, step=1,
+                            label="Số ứng viên VQA",
+                            info="Hỏi đáp AI trên bao nhiêu ứng viên có bối cảnh tốt nhất."
+                        )
+                        vqa_retrieval_slider = gr.Slider(
+                            minimum=50, maximum=500, value=200, step=25,
+                            label="Số ứng viên VQA ban đầu (Retrieval)",
+                            info="Lấy bao nhiêu ứng viên từ FAISS để tìm bối cảnh cho VQA."
+                        )
                     with gr.TabItem("TRAKE"):
-                        trake_candidates_per_step_slider = gr.Slider(...)
-                        trake_max_sequences_slider = gr.Slider(...)
+                        trake_candidates_per_step_slider = gr.Slider(
+                            minimum=5, maximum=30, value=15, step=1,
+                            label="Số ứng viên mỗi bước (TRAKE)",
+                            info="Với mỗi bước trong chuỗi, lấy bao nhiêu ứng viên."
+                        )
+                        trake_max_sequences_slider = gr.Slider(
+                            minimum=10, maximum=100, value=50, step=5,
+                            label="Số chuỗi kết quả tối đa (TRAKE)",
+                            info="Số lượng chuỗi tối đa sẽ được trả về."
+                        )
                     with gr.TabItem("Track-VQA"):
-                        track_vqa_retrieval_slider = gr.Slider(...)
-                        track_vqa_candidates_slider = gr.Slider(...)
-                    # *** GIỮ LẠI TAB QUAN TRỌNG NÀY ***
+                        track_vqa_retrieval_slider = gr.Slider(
+                            minimum=100, maximum=500, value=300, step=25,
+                            label="Số ứng viên Track-VQA ban đầu (Retrieval)",
+                            info="Lấy bao nhiêu ứng viên từ FAISS để tìm tất cả các bối cảnh."
+                        )
+                        track_vqa_candidates_slider = gr.Slider(
+                            minimum=1, maximum=100, value=20, step=5,
+                            label="Số ứng viên Track-VQA được phân tích",
+                            info="Số lượng ứng viên tốt nhất sẽ được đưa vào pipeline VQA lặp lại."
+                        )
                     with gr.TabItem("⚖️ Trọng số Rerank"):
                         gr.Markdown("Điều chỉnh tầm quan trọng của các yếu tố khi tính điểm cuối cùng.")
                         w_clip_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.4, step=0.05, label="w_clip (Thị giác Tổng thể)")

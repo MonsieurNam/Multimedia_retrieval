@@ -70,11 +70,19 @@ class GeminiTextHandler:
         2.  **Then, check for TRAKE:** If it's not TRACK_VQA, does the query ask for a SEQUENCE of DIFFERENT, ordered actions? Look for patterns like "(1)...(2)...", "bước 1... bước 2", "sau đó". If it matches, classify as **TRAKE** and stop.
             - Example: "người đàn ông đứng lên rồi bước đi"
 
-        3.  **Then, check for QNA:** If it's not TRACK_VQA or TRAKE, is it a direct question about a SINGLE item? Look for a question mark "?" or interrogative words like "cái gì", "ai". If it matches, classify as **QNA** and stop.
-            - Example: "người phụ nữ mặc áo màu gì?"
+        3.  **Then, check for QNA:** If not TRACK_VQA or TRAKE, does the query ask a **direct question** that expects a factual answer about something in the scene? This is more than just describing a scene. Look for:
+            - **Interrogative words:** "ai", "cái gì", "ở đâu", "khi nào", "tại sao", "như thế nào", "màu gì", "hãng nào", etc.
+            - **Question structures:** "có phải là...", "đang làm gì", "là ai", "trông như thế nào".
+            - A question mark "?".
+            If it matches, classify as **QNA** and stop.
+            - Example: "người phụ nữ mặc áo màu gì?" -> QNA
+            - Example: "ai là người đàn ông đang phát biểu?" -> QNA
+            - Example: "có bao nhiêu chiếc xe trên đường?" -> This asks for a count of a single scene, so it is **QNA**. (Distinguish this from TRACK_VQA which counts across multiple scenes/videos).
 
-        4.  **Default to KIS:** If the query does not meet any of the criteria above, it is a simple description of a scene. Classify as **KIS**.
-            - Example: "cảnh múa lân"
+        4.  **Default to KIS:** If the query is a statement or a descriptive phrase looking for a moment, classify as **KIS**. It describes "what to find", not "what to answer".
+            - Example: "cảnh người đàn ông đang phát biểu" -> KIS
+            - Example: "tìm người phụ nữ mặc áo đỏ" -> KIS
+            - Example: "một chiếc xe đang chạy" -> KIS
 
         **Your Task:**
         Follow the priority order strictly. Analyze the query below and return ONLY the final category as a single word.

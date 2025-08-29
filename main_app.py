@@ -170,7 +170,7 @@ def perform_search(query_text: str,
                 <strong>🌍 Đối tượng (EN):</strong> <code style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 4px;">{', '.join(full_response['query_analysis'].get('objects_en', []))}</code>
             </div>
             <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; margin: 8px 0;">
-                <strong>📝 Bối cảnh:</strong> <em>"{full_response['query_analysis'].get('context_vi', '')}"</em>
+                <strong>📝 Bối cảnh:</strong> <em>"{full_response['query_analysis'].get('search_context', '')}"</em>
             </div>
         </div>
     </div>
@@ -449,6 +449,17 @@ footer {display: none !important}
     border-radius: 12px !important;
     box-shadow: 0 8px 32px rgba(0,0,0,0.1) !important;
 }
+
+/* === THÊM VÀO ĐỂ SỬA LỖI CUỘN GALLERY CHÍNH === */
+/* 
+  Nhắm chính xác vào khu vực chứa ảnh bên trong gallery chính
+  và buộc nó phải có thanh cuộn dọc khi nội dung vượt quá chiều cao.
+*/
+#results-gallery > .gradio-gallery { 
+    height: 700px !important; 
+    overflow-y: auto !important;
+}
+/* ============================================== */
 
 /* Animation cho buttons */
 .gradio-button {

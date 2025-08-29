@@ -198,7 +198,7 @@ class MasterSearcher:
                 print("--- ⚠️ TrackVQA handler chưa được kích hoạt. Fallback về KIS. ---")
                 task_type = TaskType.KIS
 
-        if task_type == TaskType.TRAKE:
+        elif task_type == TaskType.TRAKE:
             if self.trake_solver:
                 sub_queries = self.trake_solver.decompose_query(query)
                 final_results = self.trake_solver.find_sequences(
@@ -210,7 +210,7 @@ class MasterSearcher:
             else:
                 task_type = TaskType.KIS # Fallback
 
-        if task_type == TaskType.QNA:
+        elif task_type == TaskType.QNA:
             if self.openai_handler:
                 candidates = self.semantic_searcher.search(
                     query_text=search_context,
@@ -218,20 +218,37 @@ class MasterSearcher:
                     top_k_final=vqa_candidates_to_rank,
                     top_k_retrieval=vqa_retrieval
                 )
-            specific_question = query_analysis.get('specific_question', query)
-            vqa_enhanced_candidates = []
-            for cand in candidates:
-                vqa_result = self.openai_handler.perform_vqa(cand['keyframe_path'], specific_question)
-                new_cand = cand.copy()
-                new_cand['answer'] = vqa_result['answer']
-                search_score, vqa_confidence = new_cand['final_score'], vqa_result['confidence']
-                new_cand['final_score'] = search_score * vqa_confidence
-                new_cand['scores']['search_score'] = search_score
-                new_cand['scores']['vqa_confidence'] = vqa_confidence
-                vqa_enhanced_candidates.append(new_cand)
-            final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
+                
+                specific_question = query_analysis.get('specific_question', query)
+                vqa_enhanced_candidates = []
+                print(f"--- 💬 Bắt đầu VQA trên {len(candidates)} ứng viên... ---")
+                
+                for cand in candidates:
+                    # *** NÂNG CẤP TẠI ĐÂY: Lấy transcript từ candidate ***
+                    transcript_context = cand.get('transcript_text', '') 
+                    
+                    # Truyền transcript vào hàm perform_vqa
+                    vqa_result = self.openai_handler.perform_vqa(
+                        image_path=cand['keyframe_path'], 
+                        question=specific_question,
+                        context_text=transcript_context 
+                    )
+                    
+                    new_cand = cand.copy()
+                    new_cand['answer'] = vqa_result['answer']
+                    # Tính điểm kết hợp
+                    search_score = new_cand.get('final_score', 0)
+                    vqa_confidence = vqa_result.get('confidence', 0)
+                    new_cand['final_score'] = search_score * vqa_confidence # Có thể dùng công thức khác
+                    # Lưu lại điểm thành phần để hiển thị
+                    new_cand['scores'] = new_cand.get('scores', {})
+                    new_cand['scores']['search_score'] = search_score
+                    new_cand['scores']['vqa_confidence'] = vqa_confidence
+                    vqa_enhanced_candidates.append(new_cand)
+                
+                final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
 
-        if not final_results or task_type == TaskType.KIS:
+        elif not final_results or task_type == TaskType.KIS:
             final_results = self.semantic_searcher.search(
                 query_text=search_context,
                 precomputed_analysis=query_analysis,

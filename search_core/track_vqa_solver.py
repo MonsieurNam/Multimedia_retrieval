@@ -70,24 +70,33 @@ class TrackVQASolver:
         # --- 3. Thực hiện VQA lặp lại trên từng khoảnh khắc ---
         specific_question = query_analysis.get('specific_question')
         if not specific_question:
-            return {"final_answer": "Lỗi: Không xác định được câu hỏi cụ thể để phân tích.", "evidence_frames": []}
+            return {"final_answer": "Lỗi: Không xác định được câu hỏi cụ thể.", "evidence_frames": []}
             
         print(f"   -> 3/4: Đang thực hiện VQA lặp lại với câu hỏi: '{specific_question}'")
         successful_observations = [] 
+        
         for moment in moments_to_analyze:
-            # Chúng ta có thể thêm một khoảng chờ nhỏ ở đây để tránh rate limit
-            time.sleep(0.5) 
-            vqa_result = self.vision_handler.perform_vqa(moment['keyframe_path'], specific_question)
+            time.sleep(0.5) # Giữ lại để tránh rate limit
+
+            # *** NÂNG CẤP TẠI ĐÂY: Lấy transcript từ khoảnh khắc ***
+            transcript_context = moment.get('transcript_text', '')
+
+            # Truyền transcript vào hàm perform_vqa
+            vqa_result = self.vision_handler.perform_vqa(
+                image_path=moment['keyframe_path'], 
+                question=specific_question,
+                context_text=transcript_context
+            )
+
             print(f"     -> Phản hồi API: {vqa_result}")
 
-            # Lọc câu trả lời dựa trên độ tự tin
             if vqa_result and vqa_result.get('confidence', 0) > 0.6:
                 answer_text = vqa_result.get('answer', '')
                 successful_observations.append({
-                    "answer": vqa_result.get('answer', ''),
+                    "answer": answer_text,
                     "frame_info": moment 
                 })
-                print(f"     -> ✅ Kết quả được chấp nhận (Conf > 0.6): '{answer_text}' frame_path:'{moment['keyframe_path']}'")
+                print(f"     -> ✅ Kết quả được chấp nhận (Conf > 0.6): '{answer_text}'")
             else:
                 print(f"     -> ❌ Kết quả bị loại bỏ (Conf <= 0.6 hoặc lỗi).")
 

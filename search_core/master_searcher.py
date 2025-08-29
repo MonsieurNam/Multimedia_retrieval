@@ -112,7 +112,9 @@ class MasterSearcher:
         # Track-VQA config
         track_vqa_retrieval = int(config.get('track_vqa_retrieval', 200))
         track_vqa_candidates_to_analyze = int(config.get('track_vqa_candidates', 20))
-
+        w_clip = config.get('w_clip', 0.4)
+        w_obj = config.get('w_obj', 0.3)
+        w_semantic = config.get('w_semantic', 0.3)
         # --- Bước 2: Phân tích Truy vấn ---
         query_analysis = {}
         task_type = TaskType.KIS
@@ -137,6 +139,9 @@ class MasterSearcher:
         print(f"--- Đã phân loại truy vấn là: {task_type.value} ---")
 
         final_results = []
+        query_analysis['w_clip'] = w_clip
+        query_analysis['w_obj'] = w_obj
+        query_analysis['w_semantic'] = w_semantic
         search_context = query_analysis.get('search_context', query)
 
         # --- Bước 3: Khối Điều phối Logic (Cập nhật để truyền Config) ---

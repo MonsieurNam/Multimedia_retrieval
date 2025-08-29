@@ -101,7 +101,10 @@ def perform_search(query_text: str,
         trake_candidates_per_step: int,
         trake_max_sequences: int,
         track_vqa_retrieval: int, # <-- Thêm tham số
-        track_vqa_candidates: int  # <-- Thêm tham số
+        track_vqa_candidates: int,  # <-- Thêm tham số
+        w_clip: float, 
+        w_obj: float, 
+        w_semantic: float
     ):
     """
     Hàm chính xử lý sự kiện tìm kiếm. Gọi MasterSearcher và định dạng kết quả.
@@ -117,8 +120,11 @@ def perform_search(query_text: str,
         "vqa_retrieval": int(vqa_retrieval),
         "trake_candidates_per_step": int(trake_candidates_per_step),
         "trake_max_sequences": int(trake_max_sequences),
-        "track_vqa_retrieval": int(track_vqa_retrieval), # <-- Thêm vào dict
-        "track_vqa_candidates": int(track_vqa_candidates)  # <-- Thêm vào dict
+        "track_vqa_retrieval": int(track_vqa_retrieval), 
+        "track_vqa_candidates": int(track_vqa_candidates),
+        "w_clip": w_clip,
+        "w_obj": w_obj,
+        "w_semantic": w_semantic
     }
     
     start_time = time.time()
@@ -604,6 +610,23 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                     label="Số ứng viên Track-VQA được phân tích",
                     info="Số lượng ứng viên tốt nhất sẽ được đưa vào pipeline VQA lặp lại."
                 )
+            with gr.TabItem("⚖️ Trọng số Rerank"):
+                gr.Markdown("Điều chỉnh tầm quan trọng của các yếu tố khi tính điểm cuối cùng. Tổng các trọng số nên bằng 1.0.")
+                w_clip_slider = gr.Slider(
+                    minimum=0.0, maximum=1.0, value=0.4, step=0.05,
+                    label="w_clip (Thị giác Tổng thể)",
+                    info="Tầm quan trọng của sự tương đồng hình ảnh chung (CLIP)."
+                )
+                w_obj_slider = gr.Slider(
+                    minimum=0.0, maximum=1.0, value=0.3, step=0.05,
+                    label="w_obj (Đối tượng Cụ thể)",
+                    info="Tầm quan trọng của việc khớp đúng các đối tượng được yêu cầu."
+                )
+                w_semantic_slider = gr.Slider(
+                    minimum=0.0, maximum=1.0, value=0.3, step=0.05,
+                    label="w_semantic (Bối cảnh Ngữ nghĩa)",
+                    info="Tầm quan trọng của việc khớp đúng nội dung transcript và mô tả."
+                )
     status_output = gr.HTML()
     with gr.Row():
         gemini_analysis = gr.HTML()
@@ -652,7 +675,10 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
         trake_candidates_per_step_slider,
         trake_max_sequences_slider,
         track_vqa_retrieval_slider, # <-- Thêm slider mới
-        track_vqa_candidates_slider   # <-- Thêm slider mới
+        track_vqa_candidates_slider,   # <-- Thêm slider mới
+        w_clip_slider,
+        w_obj_slider,
+        w_semantic_slider
     ]
     search_outputs = [results_gallery, status_output, response_state, gemini_analysis, stats_info]
     

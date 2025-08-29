@@ -3,6 +3,7 @@ print("--- Giai đoạn 1/4: Đang tải các thư viện cần thiết...")
 
 import sys
 import os
+import zipfile
 
 project_root = os.path.dirname(os.path.abspath(__file__))
 if project_root not in sys.path:
@@ -42,6 +43,24 @@ def encode_image_to_base64(image_path: str) -> str:
         return ""
     
 print("--- Giai đoạn 2/4: Đang cấu hình và khởi tạo Backend...")
+
+def _normalize_item_to_path(item):
+    """Gallery item can be 'path' or (path, caption)."""
+    if isinstance(item, (list, tuple)) and item:
+        return item[0]
+    return item
+
+def _build_selected_preview(gallery_items, selected_indices):
+    """Build preview list for 'Ảnh đã chọn' from gallery items + selected indices."""
+    imgs = []
+    for i in sorted(selected_indices or []):
+        item = gallery_items[i] if 0 <= i < len(gallery_items or []) else None
+        if not item:
+            continue
+        path = _normalize_item_to_path(item)
+        if path:
+            imgs.append(path)
+    return imgs
 
 try:
     user_secrets = UserSecretsClient()
@@ -134,7 +153,9 @@ def perform_search(query_text: str,
     search_time = time.time() - start_time
     
     formatted_gallery = format_results_for_gallery(full_response)
-    
+    if isinstance(formatted_gallery, list):
+        formatted_gallery = formatted_gallery[:100]
+        
     query_analysis = full_response.get('query_analysis', {})
     gemini_analysis_html = f"""
     <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); padding: 20px; border-radius: 12px; color: white; margin: 10px 0; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
@@ -161,14 +182,16 @@ def perform_search(query_text: str,
         <p style="margin: 10px 0 0 0; opacity: 0.9;"> Số kết quả: <strong>{num_results}</strong></p>
     </div>
     """
-    cleaned_response_for_state = {
-        "task_type": full_response.get("task_type"),
-        "results": full_response.get("results")
-    }
+    cleaned_response_for_state = {"task_type": full_response.get("task_type"), "results": full_response.get("results")}
     task_type_msg = full_response.get('task_type', TaskType.KIS).value
     status_msg_html = f"✅ Tìm kiếm hoàn tất trong {search_time:.2f}s. Chế độ: {task_type_msg}"
     
-    return formatted_gallery, status_msg_html, cleaned_response_for_state, gemini_analysis_html, stats_info_html
+    return (
+        formatted_gallery, status_msg_html, cleaned_response_for_state, 
+        gemini_analysis_html, stats_info_html, formatted_gallery, 
+        [], "Đã chọn: 0", []
+    )
+
 
 def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> str:
     """
@@ -258,21 +281,21 @@ def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> s
     """
     return html
 
-def on_gallery_select(response_state: Dict[str, Any], evt: gr.SelectData):
+def on_gallery_select(response_state: Dict[str, Any], gallery_items, selected_indices, evt: gr.SelectData):
     """
-    Hàm xử lý sự kiện khi người dùng chọn một ảnh trong gallery.
-    *** PHIÊN BẢN SỬA LỖI LOGIC `return` ***
+    Khi click 1 ảnh trong gallery: hiển thị preview, toggle chọn/bỏ chọn, cập nhật 'Ảnh đã chọn'.
     """
     if not response_state or evt is None:
-        return None, "", ""
+        current_selection = selected_indices or []
+        return None, "", "", current_selection, f"Đã chọn: {len(current_selection)}", _build_selected_preview(gallery_items, current_selection)
 
     results = response_state.get("results", [])
     if not results or evt.index >= len(results):
-        gr.Error("Lỗi: Không tìm thấy kết quả tương ứng. Vui lòng thử tìm kiếm lại.")
-        return None, "Lỗi: Dữ liệu không đồng bộ.", ""
+        gr.Error("Lỗi: Không tìm thấy kết quả tương ứng.")
+        current_selection = selected_indices or []
+        return None, "Lỗi: Dữ liệu không đồng bộ.", "", current_selection, f"Đã chọn: {len(current_selection)}", _build_selected_preview(gallery_items, current_selection)
 
-    selected_result = results[evt.index]
-    task_type = response_state.get('task_type')
+    selected_result = results[evt.index]; task_type = response_state.get('task_type')
 
     # --- Nhánh 1: Xử lý kết quả tổng hợp TRACK_VQA ---
     if selected_result.get("is_aggregated_result"):
@@ -344,7 +367,46 @@ def on_gallery_select(response_state: Dict[str, Any], evt: gr.SelectData):
     </div>
     """
     
-    return video_clip_path, detailed_info_html, clip_info_html
+    s = set(selected_indices or [])
+    if evt.index is not None:
+        if evt.index in s: s.remove(evt.index)
+        else: s.add(evt.index)
+    s_list = sorted(list(s))
+    
+    return video_clip_path, detailed_info_html, clip_info_html, s_list, f"Đã chọn: {len(s_list)}", _build_selected_preview(gallery_items, s_list)
+
+def select_all_items(gallery_items):
+    """Chọn tất cả các item trong gallery hiện tại."""
+    idxs = list(range(len(gallery_items or [])))
+    return idxs, f"Đã chọn: {len(idxs)}", _build_selected_preview(gallery_items, idxs)
+
+def clear_selection():
+    """Bỏ chọn tất cả."""
+    return [], "Đã chọn: 0", []
+
+def deselect_from_selected_preview(gallery_items, selected_indices, evt: gr.SelectData):
+    """Khi click một thumbnail trong 'Ảnh đã chọn', bỏ chọn nó."""
+    if evt is None or not selected_indices: return selected_indices, f"Đã chọn: {len(selected_indices or [])}", _build_selected_preview(gallery_items, selected_indices)
+    
+    k = int(evt.index)
+    current_selection = list(selected_indices)
+    if 0 <= k < len(current_selection):
+        item_to_remove = current_selection.pop(k)
+    return current_selection, f"Đã chọn: {len(current_selection)}", _build_selected_preview(gallery_items, current_selection)
+
+def download_selected_zip(gallery_items, selected_indices):
+    """Tạo và trả về file ZIP của các ảnh đã chọn."""
+    if not selected_indices:
+        gr.Warning("Chưa có ảnh nào được chọn để tải về.")
+        return None
+    out_path = "/kaggle/working/selected_images.zip"
+    if os.path.exists(out_path): os.remove(out_path)
+    
+    with zipfile.ZipFile(out_path, "w") as zf:
+        for i in sorted(selected_indices):
+            path = _normalize_item_to_path(gallery_items[i])
+            if path and os.path.isfile(path): zf.write(path, arcname=os.path.basename(path))
+    return out_path
 
 def handle_submission(response_state: Dict[str, Any], query_id: str):
     """
@@ -370,20 +432,10 @@ def handle_submission(response_state: Dict[str, Any], query_id: str):
     return file_path
 
 def clear_all():
-    """
-    Xóa tất cả các output trên giao diện.
-    """
+    """Nâng cấp để xóa tất cả các output và state mới."""
     return (
-        [],                  # results_gallery
-        "",                  # status_output
-        None,                # response_state
-        "",                  # gemini_analysis
-        "",                  # stats_info
-        None,                # video_player
-        "",                  # detailed_info
-        "",                  # clip_info
-        "",                  # query_id_input
-        None                 # submission_file_output
+        [], "", None, "", "", None, "", "", "", None, # Outputs cũ
+        "Đã chọn: 0", [], [], None, [] # Outputs mới (selection)
     )
 
 print("--- Giai đoạn 4/4: Đang xây dựng giao diện người dùng...")
@@ -522,186 +574,174 @@ app_footer_html = """
     </div>
     """
 
+
+print("--- Giai đoạn 4/4: Đang xây dựng giao diện người dùng (Ultimate Battle Station)...")
+
 with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video Search") as app:
     
     gr.HTML(app_header_html)
-    
+
+    # --- Khai báo States ---
     response_state = gr.State()
-    
-    with gr.Row():
-        with gr.Column(scale=8):
+    gallery_items_state = gr.State([])
+    selected_indices_state = gr.State([])
+
+    # --- BỐ CỤC CHÍNH 2 CỘT ---
+    with gr.Row(variant='panel'):
+        # --- CỘT TRÁI (2/3 không gian): TÌM KIẾM, KẾT QUẢ, THU THẬP ---
+        with gr.Column(scale=2):
+            
+            # --- 1. Khu vực Nhập liệu & Điều khiển chính ---
+            gr.Markdown("### 1. Nhập truy vấn")
             query_input = gr.Textbox(
-                label="🔍 Nhập truy vấn tìm kiếm",
-                placeholder="Ví dụ: một người đàn ông mặc áo xanh đang nói chuyện điện thoại trong công viên...",
+                label="🔍 Nhập mô tả chi tiết bằng tiếng Việt",
+                placeholder="Ví dụ: một người phụ nữ mặc váy đỏ đang nói về việc bảo tồn rùa biển...",
                 lines=2,
-                autofocus=True,
-                elem_classes=["search-input"]
+                autofocus=True
             )
-        with gr.Column(scale=2):
-            search_mode = gr.Dropdown(
-                choices=["Semantic Search", "Basic CLIP Search"],
-                value="Semantic Search",
-                label="🎛️ Chế độ tìm kiếm",
-                interactive=True
-            )
-    
-    with gr.Row():
-        with gr.Column(scale=2):
-            search_button = gr.Button(
-                "🚀 Tìm kiếm",
-                variant="primary",
-                size="lg",
-                elem_classes=["search-button"]
-            )
-        with gr.Column(scale=2):
-            num_results = gr.Slider(
-                minimum=20,
-                maximum=100,
-                value=12,
-                step=3,
-                label="📊 Số kết quả",
-                interactive=True
-            )
-        with gr.Column(scale=4):
-            clear_button = gr.Button(
-                "🗑️ Xóa kết quả",
-                variant="secondary",
-                size="lg"
-            )
-    with gr.Accordion("⚙️ Tùy chỉnh Nâng cao", open=False):
-        gr.Markdown("Điều chỉnh các tham số của thuật toán tìm kiếm và tái xếp hạng.")
-        with gr.Tabs():
-            with gr.TabItem("KIS / Chung"):
-                kis_retrieval_slider = gr.Slider(
-                    minimum=50, maximum=500, value=100, step=25,
-                    label="Số ứng viên KIS ban đầu (Retrieval)",
-                    info="Lấy bao nhiêu ứng viên từ FAISS trước khi rerank cho KIS."
+            with gr.Row():
+                search_button = gr.Button("🚀 Tìm kiếm", variant="primary", size="lg")
+                num_results = gr.Slider(
+                    minimum=20, maximum=100, value=100, step=10,
+                    label="📊 Số kết quả tối đa",
+                    interactive=True
                 )
-            with gr.TabItem("VQA"):
-                vqa_candidates_slider = gr.Slider(
-                    minimum=3, maximum=30, value=8, step=1,
-                    label="Số ứng viên VQA",
-                    info="Hỏi đáp AI trên bao nhiêu ứng viên có bối cảnh tốt nhất."
-                )
-                vqa_retrieval_slider = gr.Slider(
-                    minimum=50, maximum=500, value=200, step=25,
-                    label="Số ứng viên VQA ban đầu (Retrieval)",
-                    info="Lấy bao nhiêu ứng viên từ FAISS để tìm bối cảnh cho VQA."
-                )
-            with gr.TabItem("TRAKE"):
-                trake_candidates_per_step_slider = gr.Slider(
-                    minimum=5, maximum=30, value=15, step=1,
-                    label="Số ứng viên mỗi bước (TRAKE)",
-                    info="Với mỗi bước trong chuỗi, lấy bao nhiêu ứng viên."
-                )
-                trake_max_sequences_slider = gr.Slider(
-                    minimum=10, maximum=100, value=50, step=5,
-                    label="Số chuỗi kết quả tối đa (TRAKE)",
-                    info="Số lượng chuỗi tối đa sẽ được trả về."
-                )
-            with gr.TabItem("Track-VQA"):
-                track_vqa_retrieval_slider = gr.Slider(
-                    minimum=100, maximum=500, value=300, step=25,
-                    label="Số ứng viên Track-VQA ban đầu (Retrieval)",
-                    info="Lấy bao nhiêu ứng viên từ FAISS để tìm tất cả các bối cảnh."
-                )
-                track_vqa_candidates_slider = gr.Slider(
-                    minimum=1, maximum=100, value=20, step=5,
-                    label="Số ứng viên Track-VQA được phân tích",
-                    info="Số lượng ứng viên tốt nhất sẽ được đưa vào pipeline VQA lặp lại."
-                )
-            with gr.TabItem("⚖️ Trọng số Rerank"):
-                gr.Markdown("Điều chỉnh tầm quan trọng của các yếu tố khi tính điểm cuối cùng. Tổng các trọng số nên bằng 1.0.")
-                w_clip_slider = gr.Slider(
-                    minimum=0.0, maximum=1.0, value=0.4, step=0.05,
-                    label="w_clip (Thị giác Tổng thể)",
-                    info="Tầm quan trọng của sự tương đồng hình ảnh chung (CLIP)."
-                )
-                w_obj_slider = gr.Slider(
-                    minimum=0.0, maximum=1.0, value=0.3, step=0.05,
-                    label="w_obj (Đối tượng Cụ thể)",
-                    info="Tầm quan trọng của việc khớp đúng các đối tượng được yêu cầu."
-                )
-                w_semantic_slider = gr.Slider(
-                    minimum=0.0, maximum=1.0, value=0.3, step=0.05,
-                    label="w_semantic (Bối cảnh Ngữ nghĩa)",
-                    info="Tầm quan trọng của việc khớp đúng nội dung transcript và mô tả."
-                )
-    status_output = gr.HTML()
-    with gr.Row():
-        gemini_analysis = gr.HTML()
-        stats_info = gr.HTML()
-    
-    with gr.Row():
-        with gr.Column(scale=2):
+                clear_button = gr.Button("🗑️ Xóa tất cả", variant="secondary", size="lg")
+
+            # --- 2. Khu vực Tinh chỉnh Nâng cao ---
+            with gr.Accordion("⚙️ Tùy chỉnh Nâng cao", open=False):
+                with gr.Tabs():
+                    with gr.TabItem("KIS / Chung"):
+                        kis_retrieval_slider = gr.Slider(...)
+                    with gr.TabItem("VQA"):
+                        vqa_candidates_slider = gr.Slider(...)
+                        vqa_retrieval_slider = gr.Slider(...)
+                    with gr.TabItem("TRAKE"):
+                        trake_candidates_per_step_slider = gr.Slider(...)
+                        trake_max_sequences_slider = gr.Slider(...)
+                    with gr.TabItem("Track-VQA"):
+                        track_vqa_retrieval_slider = gr.Slider(...)
+                        track_vqa_candidates_slider = gr.Slider(...)
+                    # *** GIỮ LẠI TAB QUAN TRỌNG NÀY ***
+                    with gr.TabItem("⚖️ Trọng số Rerank"):
+                        gr.Markdown("Điều chỉnh tầm quan trọng của các yếu tố khi tính điểm cuối cùng.")
+                        w_clip_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.4, step=0.05, label="w_clip (Thị giác Tổng thể)")
+                        w_obj_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.3, step=0.05, label="w_obj (Đối tượng)")
+                        w_semantic_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.3, step=0.05, label="w_semantic (Ngữ nghĩa)")
+
+            # --- 3. Khu vực Trạng thái & Phân tích ---
+            status_output = gr.HTML()
+            with gr.Row():
+                gemini_analysis = gr.HTML(scale=1)
+                stats_info = gr.HTML(scale=1)
+
+            # --- 4. Khu vực Kết quả chính ---
+            gr.Markdown("### 2. Kết quả tìm kiếm")
             results_gallery = gr.Gallery(
-                label="🖼️ Kết quả tìm kiếm",
+                label="Click vào ảnh để xem chi tiết và để CHỌN/BỎ CHỌN",
                 show_label=True,
                 elem_id="results-gallery",
-                columns=3,
-                rows=4,
+                columns=5,
                 object_fit="cover",
-                height=600,
-                allow_preview=True,
+                height=700,
+                allow_preview=False,
                 preview=True
             )
-        
-        with gr.Column(scale=1):
+
+            # --- 5. Khu vực Thu thập & Tải về ---
+            gr.Markdown("### 3. Thu thập & Tải về")
+            selected_count_md = gr.Markdown("Đã chọn: 0")
+            selected_preview = gr.Gallery(
+                label="Ảnh đã chọn (Click để bỏ chọn)",
+                show_label=True,
+                columns=8,
+                rows=2,
+                height=220,
+                object_fit="cover"
+            )
             with gr.Row():
-                video_player = gr.Video(
-                    label="🎬 Video Clip",
-                    height=300,
-                    autoplay=True,
-                    show_share_button=False
-                )
+                btn_select_all = gr.Button("Chọn tất cả")
+                btn_clear_sel = gr.Button("Bỏ chọn tất cả")
+                btn_download = gr.Button("Tải ZIP các ảnh đã chọn", variant="primary")
+            zip_file_out = gr.File(label="Tải tệp ZIP của bạn tại đây")
+
+        # --- CỘT PHẢI (1/3 không gian): XEM CHI TIẾT & NỘP BÀI ---
+        with gr.Column(scale=1):
+            
+            # --- 1. Khu vực Xem Video & Chi tiết ---
+            gr.Markdown("### Chi tiết Kết quả")
+            video_player = gr.Video(label="🎬 Video Clip (10 giây)", autoplay=True)
             clip_info = gr.HTML()
             detailed_info = gr.HTML()
 
-    with gr.Accordion("💾 Tạo File Nộp Bài", open=False):
-        with gr.Row():
-            query_id_input = gr.Textbox(label="Nhập Query ID", placeholder="Ví dụ: query_01")
-            submission_button = gr.Button("Tạo File")
-        submission_file_output = gr.File(label="Tải file nộp bài của bạn")
+            # --- 2. Khu vực Nộp bài ---
+            with gr.Accordion("💾 Tạo File Nộp Bài", open=True):
+                query_id_input = gr.Textbox(label="Nhập Query ID", placeholder="Ví dụ: query_01")
+                submission_button = gr.Button("Tạo File")
+                submission_file_output = gr.File(label="Tải file nộp bài")
 
     gr.HTML(usage_guide_html)
     gr.HTML(app_footer_html)
-
-    search_inputs = [
-        query_input, 
-        num_results,
-        kis_retrieval_slider,
-        vqa_candidates_slider,
-        vqa_retrieval_slider,
-        trake_candidates_per_step_slider,
-        trake_max_sequences_slider,
-        track_vqa_retrieval_slider, # <-- Thêm slider mới
-        track_vqa_candidates_slider,   # <-- Thêm slider mới
-        w_clip_slider,
-        w_obj_slider,
-        w_semantic_slider
-    ]
-    search_outputs = [results_gallery, status_output, response_state, gemini_analysis, stats_info]
     
+    search_inputs = [
+        query_input, num_results, kis_retrieval_slider, vqa_candidates_slider,
+        vqa_retrieval_slider, trake_candidates_per_step_slider, trake_max_sequences_slider,
+        track_vqa_retrieval_slider, track_vqa_candidates_slider,
+        w_clip_slider, w_obj_slider, w_semantic_slider
+    ]
+    search_outputs = [
+        results_gallery, status_output, response_state, gemini_analysis, stats_info,
+        gallery_items_state, selected_indices_state, selected_count_md, selected_preview
+    ]
     search_button.click(fn=perform_search, inputs=search_inputs, outputs=search_outputs)
     query_input.submit(fn=perform_search, inputs=search_inputs, outputs=search_outputs)
-    
+
+    # 2. Sự kiện Lựa chọn trong Gallery chính
     results_gallery.select(
         fn=on_gallery_select,
-        inputs=[response_state], # Chỉ cần response_state
-        outputs=[video_player, detailed_info, clip_info]
+        inputs=[response_state, gallery_items_state, selected_indices_state],
+        outputs=[
+            video_player, detailed_info, clip_info, 
+            selected_indices_state, selected_count_md, selected_preview
+        ]
     )
-    
+
+    # 3. Sự kiện cho các nút Chọn/Bỏ chọn/Tải về
+    btn_select_all.click(
+        fn=select_all_items,
+        inputs=[gallery_items_state],
+        outputs=[selected_indices_state, selected_count_md, selected_preview]
+    )
+    btn_clear_sel.click(
+        fn=clear_selection,
+        inputs=[],
+        outputs=[selected_indices_state, selected_count_md, selected_preview]
+    )
+    selected_preview.select(
+        fn=deselect_from_selected_preview,
+        inputs=[gallery_items_state, selected_indices_state],
+        outputs=[selected_indices_state, selected_count_md, selected_preview]
+    )
+    btn_download.click(
+        fn=download_selected_zip,
+        inputs=[gallery_items_state, selected_indices_state],
+        outputs=[zip_file_out]
+    )
+
+    # 4. Sự kiện Nộp bài
     submission_button.click(
         fn=handle_submission,
         inputs=[response_state, query_id_input],
         outputs=[submission_file_output]
     )
 
+    # 5. Sự kiện Xóa tất cả
     clear_outputs = [
         results_gallery, status_output, response_state, gemini_analysis, stats_info,
-        video_player, detailed_info, clip_info, query_id_input, submission_file_output
+        video_player, detailed_info, clip_info, query_id_input, submission_file_output,
+        selected_count_md, selected_indices_state, gallery_items_state, zip_file_out, selected_preview
     ]
-    clear_button.click(fn=clear_all, inputs=[], outputs=clear_outputs)
+    clear_button.click(fn=clear_all, inputs=None, outputs=clear_outputs)
 
 if __name__ == "__main__":
     print("--- 🚀 Khởi chạy Gradio App Server ---")

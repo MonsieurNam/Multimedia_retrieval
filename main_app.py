@@ -59,7 +59,7 @@ except Exception as e:
 
 
 FAISS_INDEX_PATH = '/kaggle/input/stage1/faiss.index'
-RERANK_METADATA_PATH = '/kaggle/input/stage1/rerank_metadata.parquet'
+RERANK_METADATA_PATH = '/kaggle/input/stage1/master_metadata_v2.parquet'
 VIDEO_BASE_PATH = "/kaggle/input/aic2025-batch-1-video/"
 ALL_ENTITIES_PATH = "/kaggle/input/stage1/all_detection_entities.json"
 

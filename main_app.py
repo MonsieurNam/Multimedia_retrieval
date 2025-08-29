@@ -660,9 +660,8 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
             # --- 3. Khu vực Trạng thái & Phân tích ---
             status_output = gr.HTML()
             with gr.Row():
-                gemini_analysis = gr.HTML(scale=1)
-                stats_info = gr.HTML(scale=1)
-
+                gemini_analysis = gr.HTML()
+                stats_info = gr.HTML()
             # --- 4. Khu vực Kết quả chính ---
             gr.Markdown("### 2. Kết quả tìm kiếm")
             results_gallery = gr.Gallery(

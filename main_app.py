@@ -768,24 +768,6 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                             step=0.05, 
                             label="λ - MMR (0.0=Đa dạng nhất, 1.0=Liên quan nhất)"
                         )
-             # --- 4. Khu vực Kết quả chính (THÊM CÁC NÚT PHÂN TRANG) ---
-            gr.Markdown("### 2. Kết quả tìm kiếm")
-            
-            # --- THÊM MỚI: Bảng điều khiển phân trang ---
-            with gr.Row(equal_height=True, variant='compact'):
-                prev_page_button = gr.Button("◀️ Trang trước")
-                page_info_display = gr.Markdown("Trang 1 / 1", elem_id="page-info")
-                next_page_button = gr.Button("▶️ Trang sau")
-
-            results_gallery = gr.Gallery(
-                label="Click vào một ảnh để phân tích sâu",
-                show_label=True,
-                elem_id="results-gallery",
-                columns=10, # Giữ nguyên mật độ cao
-                object_fit="contain",
-                height=580, # Chiều cao cố định, không cần cuộn
-                allow_preview=False
-            )
             # --- 3. Khu vực Trạng thái & Phân tích ---
             status_output = gr.HTML()
             with gr.Row():
@@ -793,6 +775,12 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                 stats_info = gr.HTML()
             # --- 4. Khu vực Kết quả chính ---
             gr.Markdown("### 2. Kết quả tìm kiếm")
+            # --- THÊM MỚI: Bảng điều khiển phân trang ---
+            with gr.Row(equal_height=True, variant='compact'):
+                prev_page_button = gr.Button("◀️ Trang trước")
+                page_info_display = gr.Markdown("Trang 1 / 1", elem_id="page-info")
+                next_page_button = gr.Button("▶️ Trang sau")
+                
             results_gallery = gr.Gallery(
                 label="Click vào ảnh để xem chi tiết và để CHỌN/BỎ CHỌN",
                 show_label=True,

@@ -829,6 +829,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                 stats_info = gr.HTML()
             # --- 4. Khu vực Kết quả chính ---
             gr.Markdown("### 2. Kết quả tìm kiếm")
+            
             # --- THÊM MỚI: Bảng điều khiển phân trang ---
             with gr.Row(equal_height=True, variant='compact'):
                 prev_page_button = gr.Button("◀️ Trang trước")
@@ -863,20 +864,32 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
             zip_file_out = gr.File(label="Tải tệp ZIP của bạn tại đây")
 
         # --- CỘT PHẢI (1/3 không gian): XEM CHI TIẾT & NỘP BÀI ---
-        with gr.Column(scale=1): # Cột phải
-            gr.Markdown("### Trạm Phân tích")
-            selected_image_display = gr.Image(label="Ảnh Đại diện", type="filepath")
+        with gr.Column(scale=1):
+            
+            gr.Markdown("### 3. Trạm Phân tích")
+            
+            # --- KHAI BÁO CÁC COMPONENT BỊ THIẾU Ở ĐÂY ---
+            selected_image_display = gr.Image(label="Ảnh Keyframe Được chọn", type="filepath")
             video_player = gr.Video(label="🎬 Clip 10 giây", autoplay=True)
             
             with gr.Tabs():
                 with gr.TabItem("📊 Phân tích & Điểm số"):
-                    # Dùng HTML để hiển thị thông tin TRAKE hoặc KIS/QNA
-                    detailed_info_html = gr.HTML()
+                    # Component này sẽ nhận HTML từ on_gallery_select
+                    detailed_info = gr.HTML() 
                     scores_display = gr.DataFrame(headers=["Metric", "Value"], label="Bảng điểm")
                     
                 with gr.TabItem("💬 VQA & Transcript"):
                     vqa_answer_display = gr.Textbox(label="Câu trả lời VQA", interactive=False, lines=5)
                     transcript_display = gr.Textbox(label="📝 Transcript", lines=8, interactive=False)
+                    
+            clip_info = gr.HTML() 
+
+            gr.Markdown("### 4. Vùng Nộp bài")
+            with gr.Accordion("💾 Tạo File Nộp Bài", open=True):
+                # Khai báo các component nộp bài
+                query_id_input = gr.Textbox(label="Nhập Query ID", placeholder="Ví dụ: query_01")
+                submission_button = gr.Button("💾 Tạo File CSV")
+                submission_file_output = gr.File(label="Tải file nộp bài tại đây")
 
     gr.HTML(usage_guide_html)
     gr.HTML(app_footer_html)
@@ -912,9 +925,9 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
         vqa_answer_display,
         transcript_display,
         selected_candidate_for_submission,
-        detailed_info_html # Thêm output cho HTML
+        detailed_info, # `detailed_info` giờ đã được định nghĩa
+        clip_info      # `clip_info` giờ đã được định nghĩa
     ]
-    # 2. Gán sự kiện select của gallery
     results_gallery.select(
         fn=on_gallery_select,
         inputs=[response_state, current_page_state], 

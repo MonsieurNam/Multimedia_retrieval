@@ -125,18 +125,6 @@ class SemanticSearcher:
                            w_obj * object_score + 
                            w_semantic * semantic_score)
             
-            # ==============================================================================
-            # === DEBUG LOG: KIỂM TRA ĐIỂM SỐ ===========================================
-            # ==============================================================================
-            if i < 3: # Chỉ in 3 kết quả đầu
-                print(f"--- DEBUG SCORE (cand #{i}) ---")
-                print(f"  - Original CLIP: {original_clip_score:.4f} -> Normalized: {normalized_clip_score:.4f}")
-                print(f"  - Object Score: {object_score:.4f}")
-                print(f"  - Semantic Score: {semantic_score:.4f}")
-                print(f"  - Weights (C,O,S): ({w_clip}, {w_obj}, {w_semantic})")
-                print(f"  - ==> FINAL SCORE: {final_score:.4f}")
-            # ==============================================================================
-
             cand['final_score'] = final_score
             cand['scores'] = {'clip': normalized_clip_score, 'object': object_score, 'semantic': semantic_score}
             reranked_results.append(cand)

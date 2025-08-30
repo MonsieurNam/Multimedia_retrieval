@@ -257,14 +257,13 @@ def perform_search(
         print(f"  -> response_state['results'] (số lượng): {len(response_state.get('results', []))}")
     print("="*66 + "\n")
     
-    # Trả về một tuple chứa đúng 9 giá trị
-    return (
+    yield (
         gallery_paths,          # 1. results_gallery
         status_msg,             # 2. status_output
         response_state,         # 3. response_state
         analysis_html,          # 4. gemini_analysis
         stats_info_html,        # 5. stats_info
-        gallery_paths,          # 6. gallery_items_state (lưu lại đường dẫn ảnh)
+        gallery_paths,          # 6. gallery_items_state
         [],                     # 7. selected_indices_state (reset)
         "Đã chọn: 0",           # 8. selected_count_md (reset)
         []                      # 9. selected_preview (reset)

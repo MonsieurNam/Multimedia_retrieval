@@ -21,7 +21,7 @@ from search_core.basic_searcher import BasicSearcher
 from search_core.semantic_searcher import SemanticSearcher
 from search_core.master_searcher import MasterSearcher
 from search_core.task_analyzer import TaskType
-from utils.formatting import format_results_for_mute_gallery
+from utils.formatting import format_list_for_submission, format_results_for_mute_gallery
 
 from utils import (
     create_video_segment,
@@ -605,6 +605,88 @@ def clear_all():
         [], "", None, "", "", None, "", "", "", None, # Outputs cũ
         "Đã chọn: 0", [], [], None, [] # Outputs mới (selection)
     )
+    
+def _format_submission_list_for_display(submission_list: list) -> str:
+    """Hàm phụ trợ để biến danh sách submission thành một chuỗi text đẹp mắt."""
+    if not submission_list:
+        return "Chưa có kết quả nào được thêm vào."
+    
+    display_text = ""
+    for i, item in enumerate(submission_list):
+        task_type = item.get('task_type')
+        item_info = ""
+        if task_type == TaskType.TRAKE:
+            item_info = f"TRAKE Seq | Vid: {item.get('video_id')} | Score: {item.get('final_score', 0):.3f}"
+        else: # KIS, QNA
+            item_info = f"Frame | {item.get('keyframe_id')} | Score: {item.get('final_score', 0):.3f}"
+        
+        display_text += f"{i+1:02d}. {item_info}\n" # Thêm số thứ tự 2 chữ số
+    return display_text
+
+def add_to_submission_list(
+    submission_list: list, 
+    candidate: Dict[str, Any], 
+    response_state: Dict[str, Any], # Cần response_state để lấy task_type
+    position: str
+):
+    """Thêm một ứng viên vào danh sách nộp bài."""
+    if not candidate:
+        gr.Warning("Chưa có ứng viên nào được chọn để thêm!")
+        return _format_submission_list_for_display(submission_list), submission_list
+
+    task_type = response_state.get("task_type")
+    
+    # Tạo một bản sao sạch của ứng viên để lưu trữ
+    item_to_add = candidate.copy()
+    item_to_add['task_type'] = task_type # Gắn loại nhiệm vụ vào item
+
+    # Kiểm tra trùng lặp
+    existing_ids = {item.get('keyframe_id') for item in submission_list if item.get('keyframe_id')}
+    if task_type != TaskType.TRAKE and item_to_add.get('keyframe_id') in existing_ids:
+        gr.Info("Frame này đã có trong danh sách nộp bài.")
+        return _format_submission_list_for_display(submission_list), submission_list
+        
+    # Thêm vào vị trí mong muốn
+    if position == 'top':
+        submission_list.insert(0, item_to_add)
+    else: # bottom
+        submission_list.append(item_to_add)
+        
+    # Giới hạn danh sách ở 100
+    if len(submission_list) > 100:
+        if position == 'top':
+             submission_list = submission_list[:100]
+        else: # Nếu thêm vào cuối, loại bỏ phần tử đầu
+             submission_list = submission_list[-100:]
+        gr.Info("Danh sách đã đạt 100 kết quả.")
+
+    gr.Success(f"Đã thêm kết quả vào {'đầu' if position == 'top' else 'cuối'} danh sách!")
+    return _format_submission_list_for_display(submission_list), submission_list
+
+def clear_submission_list():
+    """Xóa toàn bộ danh sách nộp bài."""
+    gr.Info("Đã xóa danh sách nộp bài.")
+    return "Chưa có kết quả nào được thêm vào.", []
+
+# Cập nhật hàm handle_submission
+def handle_submission(submission_list: list, query_id: str):
+    if not submission_list:
+        gr.Warning("Danh sách nộp bài đang trống.")
+        return None
+    
+    if not query_id.strip():
+        gr.Warning("Vui lòng nhập Query ID để tạo file.")
+        return None
+        
+    # Gọi hàm format mới
+    submission_df = format_list_for_submission(submission_list, max_results=100)
+    
+    if submission_df.empty:
+        gr.Warning("Không thể định dạng kết quả để nộp bài.")
+        return None
+              
+    file_path = generate_submission_file(submission_df, query_id=query_id)
+    return file_path
 
 print("--- Giai đoạn 4/4: Đang xây dựng giao diện người dùng...")
 
@@ -765,6 +847,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     gallery_items_state = gr.State([])
     selected_indices_state = gr.State([])
     current_page_state = gr.State(1) 
+    submission_list_state = gr.State([])
     selected_candidate_for_submission = gr.State()
 
     # --- BỐ CỤC CHÍNH 2 CỘT ---
@@ -901,11 +984,24 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
             clip_info = gr.HTML() 
 
             gr.Markdown("### 4. Vùng Nộp bài")
-            with gr.Accordion("💾 Tạo File Nộp Bài", open=True):
-                # Khai báo các component nộp bài
-                query_id_input = gr.Textbox(label="Nhập Query ID", placeholder="Ví dụ: query_01")
-                submission_button = gr.Button("💾 Tạo File CSV")
-                submission_file_output = gr.File(label="Tải file nộp bài tại đây")
+            with gr.Row():
+                add_top_button = gr.Button("➕ Thêm vào Top 1", variant="primary")
+                add_bottom_button = gr.Button("➕ Thêm vào cuối")
+            
+            with gr.Tabs():
+                with gr.TabItem("📋 Danh sách Nộp bài"):
+                    submission_list_display = gr.Textbox(
+                        label="Thứ tự Nộp bài (Top 1 ở trên cùng)",
+                        lines=15,
+                        interactive=False,
+                        value="Chưa có kết quả nào."
+                    )
+                    clear_submission_button = gr.Button("🗑️ Xóa toàn bộ danh sách")
+
+                with gr.TabItem("💾 Xuất File"):
+                    query_id_input = gr.Textbox(label="Nhập Query ID", placeholder="Ví dụ: query_01")
+                    submission_button = gr.Button("💾 Tạo File CSV")
+                    submission_file_output = gr.File(label="Tải file nộp bài tại đây")
 
     gr.HTML(usage_guide_html)
     gr.HTML(app_footer_html)
@@ -973,9 +1069,27 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     )
 
     # 4. Sự kiện Nộp bài
+    add_top_button.click(
+        fn=add_to_submission_list,
+        inputs=[submission_list_state, selected_candidate_for_submission, response_state, gr.Textbox("top", visible=False)],
+        outputs=[submission_list_display, submission_list_state]
+    )
+    
+    add_bottom_button.click(
+        fn=add_to_submission_list,
+        inputs=[submission_list_state, selected_candidate_for_submission, response_state, gr.Textbox("bottom", visible=False)],
+        outputs=[submission_list_display, submission_list_state]
+    )
+    
+    clear_submission_button.click(
+        fn=clear_submission_list,
+        inputs=[],
+        outputs=[submission_list_display, submission_list_state]
+    )
+    
     submission_button.click(
         fn=handle_submission,
-        inputs=[response_state, query_id_input],
+        inputs=[submission_list_state, query_id_input],
         outputs=[submission_file_output]
     )
 

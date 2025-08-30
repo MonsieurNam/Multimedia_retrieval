@@ -167,3 +167,61 @@ def generate_submission_file(df: pd.DataFrame, query_id: str, output_dir: str = 
     
     print(f"--- ✅ Đã tạo file nộp bài tại: {file_path} ---")
     return file_path
+
+def format_list_for_submission(submission_list: List[Dict], max_results: int = 100) -> pd.DataFrame:
+    """
+    Định dạng một danh sách các dictionary kết quả (đã được người dùng sắp xếp)
+    thành DataFrame để nộp bài.
+    """
+    if not submission_list:
+        return pd.DataFrame()
+        
+    submission_data = []
+    # Giả sử task type là giống nhau cho tất cả, lấy của item đầu tiên
+    # Điều này hợp lý vì một truy vấn chỉ thuộc một loại
+    task_type = submission_list[0].get('task_type')
+    
+    if task_type == TaskType.KIS:
+        for res in submission_list:
+            try:
+                # keyframe_id có dạng 'Lxx_Vyyy_zzz'
+                frame_index = int(res.get('keyframe_id', '').split('_')[-1])
+                submission_data.append({
+                    'video_id': res.get('video_id'),
+                    'frame_index': frame_index
+                })
+            except (ValueError, IndexError):
+                continue
+
+    elif task_type == TaskType.QNA:
+        for res in submission_list:
+            try:
+                frame_index = int(res.get('keyframe_id', '').split('_')[-1])
+                submission_data.append({
+                    'video_id': res.get('video_id'),
+                    'frame_index': frame_index,
+                    'answer': res.get('answer', '')
+                })
+            except (ValueError, IndexError):
+                continue
+    
+    elif task_type == TaskType.TRAKE:
+        for seq_res in submission_list:
+            sequence = seq_res.get('sequence', [])
+            if not sequence:
+                continue
+            
+            row = {'video_id': seq_res.get('video_id')}
+            for i, frame in enumerate(sequence):
+                try:
+                    frame_index = int(frame.get('keyframe_id', '').split('_')[-1])
+                    row[f'frame_moment_{i+1}'] = frame_index
+                except (ValueError, IndexError):
+                    row[f'frame_moment_{i+1}'] = -1 
+            submission_data.append(row)
+
+    if not submission_data:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(submission_data)
+    return df.head(max_results)

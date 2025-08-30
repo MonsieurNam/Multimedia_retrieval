@@ -9,7 +9,7 @@ class MMRResultBuilder:
     Xây dựng lại danh sách kết quả cuối cùng bằng thuật toán Maximal Marginal Relevance (MMR)
     để tăng cường sự đa dạng.
     """
-    def __init__(self, clip_features_tensor: np.ndarray, device: str = "cuda"):
+    def __init__(self, clip_features: np.ndarray, device: str = "cuda"):
         """
         Khởi tạo MMRResultBuilder.
 
@@ -24,15 +24,15 @@ class MMRResultBuilder:
             
             # --- BƯỚC SỬA LỖI ---
             # 1. Đảm bảo ma trận là C-contiguous và có kiểu float32
-            features_copy = np.ascontiguousarray(clip_features_tensor.astype('float32'))
+            features_copy = np.ascontiguousarray(clip_features.astype('float32'))
             
             # 2. Chuẩn hóa L2 trên NumPy float32
             faiss.normalize_L2(features_copy)
             
             # 3. Chuyển sang tensor
-            self.clip_features_tensor_tensor = torch.from_numpy(features_copy).to(self.device)
+            self.clip_features_tensor = torch.from_numpy(features_copy).to(self.device)
 
-            print(f"--- ✅ Chuyển đổi thành công {self.clip_features_tensor_tensor.shape[0]} vector CLIP. ---")
+            print(f"--- ✅ Chuyển đổi thành công {self.clip_features_tensor.shape[0]} vector CLIP. ---")
         except Exception as e:
             print(f"--- ❌ Lỗi nghiêm trọng khi xử lý vector CLIP: {e}. MMR sẽ bị vô hiệu hóa. ---")
             # In ra traceback để debug dễ hơn

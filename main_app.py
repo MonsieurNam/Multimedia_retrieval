@@ -145,13 +145,13 @@ def perform_search(
     initial_outputs = {
         "results_gallery": [],
         "response_state": None,
-        "status_output": gr.Markdown.update(value=""), # Dùng Markdown để style đẹp hơn
+        "status_output": "", 
         "analysis_html": ""
     }
 
     if not query_text.strip():
         gr.Warning("Vui lòng nhập truy vấn tìm kiếm!")
-        initial_outputs["status_output"] = gr.Markdown.update(value="<div style='color: orange;'>⚠️ Vui lòng nhập truy vấn và bấm Tìm kiếm.</div>")
+        initial_outputs["status_output"] = "<div style='color: orange;'>⚠️ Vui lòng nhập truy vấn và bấm Tìm kiếm.</div>"
         return list(initial_outputs.values())
 
     # Thông báo cho người dùng rằng hệ thống đang làm việc
@@ -196,7 +196,7 @@ def perform_search(
         import traceback
         traceback.print_exc()
         error_msg = f"<div style='color: red;'>🔥 Đã xảy ra lỗi nghiêm trọng: {e}</div>"
-        initial_outputs["status_output"] = gr.Markdown.update(value=error_msg)
+        initial_outputs["status_output"] = error_msg
         return list(initial_outputs.values())
 
     # ==============================================================================

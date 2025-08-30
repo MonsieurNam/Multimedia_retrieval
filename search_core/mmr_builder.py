@@ -14,7 +14,7 @@ class MMRResultBuilder:
         Khởi tạo MMRResultBuilder.
 
         Args:
-            clip_features_tensor (np.ndarray): Ma trận NumPy chứa tất cả các vector CLIP đã được nạp sẵn.
+            clip_features (np.ndarray): Ma trận NumPy chứa tất cả các vector CLIP đã được nạp sẵn.
             device (str): Thiết bị để chạy tính toán (cuda hoặc cpu).
         """
         print("--- 🎨 Khởi tạo MMR Result Builder (Diversity Engine) ---")

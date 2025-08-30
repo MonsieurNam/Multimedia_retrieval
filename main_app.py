@@ -77,7 +77,7 @@ except Exception as e:
     GEMINI_API_KEY = None
     print(f"--- ⚠️ Không tìm thấy GEMINI API Key. Lỗi: {e} ---")
 
-
+CLIP_FEATURES_PATH = '/kaggle/input/stage1/features.npy' 
 FAISS_INDEX_PATH = '/kaggle/input/stage1/faiss.index'
 RERANK_METADATA_PATH = '/kaggle/input/stage1/rerank_metadata_ultimate_v5.parquet'
 VIDEO_BASE_PATH = "/kaggle/input/aic2025-batch-1-video/"
@@ -95,7 +95,7 @@ def initialize_backend():
 
     # Bước 1: Khởi tạo BasicSearcher (không đổi)
     print("   -> 1/2: Khởi tạo BasicSearcher...")
-    basic_searcher = BasicSearcher(FAISS_INDEX_PATH, RERANK_METADATA_PATH, video_path_map)
+    basic_searcher = BasicSearcher(FAISS_INDEX_PATH, RERANK_METADATA_PATH, video_path_map, clip_features_path=CLIP_FEATURES_PATH)
     
     # Bước 2: Khởi tạo MasterSearcher phiên bản OpenAI
     # MasterSearcher giờ sẽ tự quản lý SemanticSearcher và OpenAIHandler bên trong
@@ -104,8 +104,11 @@ def initialize_backend():
             basic_searcher=basic_searcher,
             openai_api_key=OPENAI_API_KEY,
             gemini_api_key=GEMINI_API_KEY,
-            entities_path=ALL_ENTITIES_PATH
+            entities_path=ALL_ENTITIES_PATH,
+            clip_features_path=CLIP_FEATURES_PATH
         )    
+    if not master_searcher.mmr_builder:
+         print("   -> ⚠️ Cảnh báo: MMR Builder chưa được kích hoạt. Kết quả sẽ không có tính đa dạng.")
     print("--- ✅ Backend đã khởi tạo thành công! ---")
     return master_searcher
 

@@ -7,7 +7,7 @@ from typing import Optional
 def create_video_segment(
     video_path: Optional[str],
     timestamp: float,
-    duration: int = 10,
+    duration: int = 30,
     output_dir: str = "/kaggle/working/temp_clips"
 ) -> Optional[str]:
     """

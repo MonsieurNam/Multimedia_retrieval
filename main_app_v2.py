@@ -28,7 +28,7 @@ def create_mock_kis_qna_df(num_rows=200):
         'semantic_score': np.random.uniform(0.2, 0.8, num_rows).round(4),
         'final_score': np.random.uniform(0.5, 0.85, num_rows).round(4),
         'answer': [f'Câu trả lời mẫu {i}' for i in range(num_rows)],
-        'video_path': '/kaggle/input/aic-2024-public-test-data-2nd/videos/L01_V001.mp4'
+        'video_path': '/kaggle/input/aic2025-batch-1-video/L01_V001.mp4'
     }
     df = pd.DataFrame(data)
     return df.sort_values(by='final_score', ascending=False).reset_index(drop=True)

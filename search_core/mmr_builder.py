@@ -2,36 +2,36 @@ from typing import List, Dict, Any
 import numpy as np
 import torch
 from sentence_transformers import util
+import faiss 
 
 class MMRResultBuilder:
     """
     Xây dựng lại danh sách kết quả cuối cùng bằng thuật toán Maximal Marginal Relevance (MMR)
     để tăng cường sự đa dạng.
     """
-    def __init__(self, clip_features_path: str, device: str = "cuda"):
+    def __init__(self, clip_features: np.ndarray, device: str = "cuda"):
         """
         Khởi tạo MMRResultBuilder.
 
         Args:
-            clip_features_path (str): Đường dẫn đến file .npy chứa tất cả các vector CLIP.
-                                      Cần thiết để tính toán Visual Similarity.
+            clip_features (np.ndarray): Ma trận NumPy chứa tất cả các vector CLIP đã được nạp sẵn.
             device (str): Thiết bị để chạy tính toán (cuda hoặc cpu).
         """
         print("--- 🎨 Khởi tạo MMR Result Builder (Diversity Engine) ---")
         self.device = device
         try:
-            print(f"   -> Đang tải ma trận vector CLIP từ '{clip_features_path}'...")
-            # Load và chuyển sang tensor trên GPU một lần duy nhất
-            self.clip_features = torch.from_numpy(np.load(clip_features_path)).to(self.device)
-            faiss.normalize_L2(self.clip_features) # <-- Sai, faiss không hoạt động trên tensor. Sửa lại
-            # Chuẩn hóa L2 cho tensor
-            self.clip_features = self.clip_features / self.clip_features.norm(dim=1, keepdim=True)
+            print(f"   -> Đang chuyển ma trận vector CLIP sang tensor trên {self.device}...")
+            
+            # Chuẩn hóa L2 trên NumPy trước khi chuyển sang tensor
+            # Sao chép để tránh thay đổi mảng gốc trong basic_searcher
+            features_copy = clip_features.copy()
+            faiss.normalize_L2(features_copy)
+            self.clip_features_tensor = torch.from_numpy(features_copy).to(self.device)
 
-            print(f"--- ✅ Tải thành công {self.clip_features.shape[0]} vector CLIP. ---")
+            print(f"--- ✅ Chuyển đổi thành công {self.clip_features_tensor.shape[0]} vector CLIP. ---")
         except Exception as e:
-            print(f"--- ❌ Lỗi nghiêm trọng khi tải vector CLIP: {e}. MMR sẽ không hoạt động. ---")
-            self.clip_features = None
-
+            print(f"--- ❌ Lỗi nghiêm trọng khi xử lý vector CLIP: {e}. MMR sẽ bị vô hiệu hóa. ---")
+            self.clip_features_tensor = None
     def _calculate_similarity(self, cand_A: Dict, cand_B: Dict, w_visual: float = 0.8, w_time: float = 0.2) -> float:
         """
         Tính toán độ tương đồng kết hợp giữa hai ứng viên.

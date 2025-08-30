@@ -116,6 +116,8 @@ master_searcher = initialize_backend()
 
 print("--- Giai đoạn 3/4: Đang định nghĩa các hàm logic cho giao diện...")
 
+# main_app.py
+
 def perform_search(
     # --- Inputs từ UI ---
     query_text: str, 
@@ -129,31 +131,33 @@ def perform_search(
     w_obj: float, 
     w_semantic: float,
     lambda_mmr: float
-    # --- Progress Bar (để cập nhật trạng thái) ---
-    # progress=gr.Progress(track_tqdm=True) # Bỏ comment dòng này nếu bạn muốn thanh progress bar tích hợp
 ):
     """
     Hàm chính xử lý sự kiện tìm kiếm, phiên bản hoàn thiện và bền bỉ.
     Nó điều phối việc gọi backend, xử lý lỗi, định dạng kết quả, và cập nhật toàn bộ UI.
+    *** PHIÊN BẢN FULL FIXED - SẴN SÀNG CHO MODULE 2.2 ***
     """
     
     # ==============================================================================
-    # === BƯỚC 1: VALIDATE INPUT & HIỂN THỊ TRẠNG THÁI "ĐANG XỬ LÝ" ============
+    # === BƯỚC 1: KHỞI TẠO BIẾN & VALIDATE INPUT =================================
     # ==============================================================================
     
-    # Xóa kết quả cũ để chuẩn bị cho lần tìm kiếm mới
-    initial_outputs = {
-        "results_gallery": [],
-        "response_state": None,
-        "status_output": "", 
-        "analysis_html": ""
-    }
+    # Khởi tạo tất cả các biến output với giá trị mặc định (rỗng)
+    gallery_paths = []
+    response_state = None
+    status_output = ""
+    analysis_html = ""
 
     if not query_text.strip():
         gr.Warning("Vui lòng nhập truy vấn tìm kiếm!")
-        initial_outputs["status_output"] = "<div style='color: orange;'>⚠️ Vui lòng nhập truy vấn và bấm Tìm kiếm.</div>"
-        return list(initial_outputs.values())
+        status_output = "<div style='color: orange;'>⚠️ Vui lòng nhập truy vấn và bấm Tìm kiếm.</div>"
+        # Trả về các giá trị đã khởi tạo
+        return gallery_paths, response_state, status_output, analysis_html
 
+    # ==============================================================================
+    # === BƯỚC 2: YIELD TRẠNG THÁI "ĐANG XỬ LÝ" ===================================
+    # ==============================================================================
+    
     # Thông báo cho người dùng rằng hệ thống đang làm việc
     status_update = """
     <div style="display: flex; align-items: center; gap: 15px; padding: 10px; background-color: #e0e7ff; border-radius: 8px;">
@@ -162,11 +166,12 @@ def perform_search(
     </div>
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     """
-    # Dùng yield để cập nhật UI ngay lập tức
+    
+    # Yield để cập nhật status_output, các biến khác vẫn giữ giá trị rỗng ban đầu.
     yield gallery_paths, response_state, status_update, analysis_html
     
     # ==============================================================================
-    # === BƯỚC 2: GỌI BACKEND & XỬ LÝ LỖI ========================================
+    # === BƯỚC 3: GỌI BACKEND & XỬ LÝ LỖI ========================================
     # ==============================================================================
     
     try:
@@ -195,25 +200,26 @@ def perform_search(
         print(f"--- ❌ LỖI NGHIÊM TRỌNG TRONG PIPELINE TÌM KIẾM: {e} ---")
         import traceback
         traceback.print_exc()
-        error_msg = f"<div style='color: red;'>🔥 Đã xảy ra lỗi nghiêm trọng: {e}</div>"
-        initial_outputs["status_output"] = error_msg
-        return list(initial_outputs.values())
+        status_output = f"<div style='color: red;'>🔥 Đã xảy ra lỗi nghiêm trọng trong backend: {e}</div>"
+        # Trả về trạng thái lỗi và các giá trị rỗng
+        return gallery_paths, response_state, status_output, analysis_html
 
     # ==============================================================================
-    # === BƯỚC 3: ĐỊNH DẠNG KẾT QUẢ & CẬP NHẬT UI ================================
+    # === BƯỚC 4: ĐỊNH DẠNG KẾT QUẢ & CẬP NHẬT UI CUỐI CÙNG ======================
     # ==============================================================================
 
-    # Định dạng kết quả cho Lưới ảnh "câm"
+    # Gán giá trị mới cho các biến đã khởi tạo
     gallery_paths = format_results_for_mute_gallery(full_response)
+    response_state = full_response # Lưu lại toàn bộ response để các hàm khác sử dụng
     
     # Tạo thông báo trạng thái cuối cùng
     task_type_msg = full_response.get('task_type', TaskType.KIS).value
     num_found = len(gallery_paths)
     
     if num_found == 0:
-        status_msg = f"<div style='color: #d97706;'>😔 **{task_type_msg}** | Không tìm thấy kết quả nào trong {search_time:.2f} giây.</div>"
+        status_output = f"<div style='color: #d97706;'>😔 **{task_type_msg}** | Không tìm thấy kết quả nào trong {search_time:.2f} giây.</div>"
     else:
-        status_msg = f"<div style='color: #166534;'>✅ **{task_type_msg}** | Tìm thấy {num_found} kết quả trong {search_time:.2f} giây.</div>"
+        status_output = f"<div style='color: #166534;'>✅ **{task_type_msg}** | Tìm thấy {num_found} kết quả trong {search_time:.2f} giây.</div>"
 
     # Tạo HTML phân tích truy vấn
     query_analysis = full_response.get('query_analysis', {})
@@ -228,12 +234,8 @@ def perform_search(
     </div>
     """
     
-    # Trả về kết quả cuối cùng cho các component trên UI
-    # - gallery_paths cho results_gallery
-    # - full_response cho response_state
-    # - status_msg cho status_output
-    # - analysis_html cho analysis_html
-    return gallery_paths, full_response, status_msg, analysis_html
+    # Trả về (hoặc yield) bộ giá trị cuối cùng để cập nhật toàn bộ UI
+    return gallery_paths, response_state, status_output, analysis_html
 
 
 def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> str:

@@ -449,7 +449,7 @@ def on_gallery_select(
     if not response_state or evt is None:
         gr.Warning("Vui lòng thực hiện tìm kiếm trước.")
         # Trả về giá trị rỗng cho tất cả outputs của Trạm Phân tích
-        return None, None, pd.DataFrame(), "", "", None
+        return None, None, pd.DataFrame(), "", "", None, "", ""
 
     results = response_state.get("results", [])
     task_type = response_state.get("task_type")
@@ -459,7 +459,7 @@ def on_gallery_select(
     
     if not results or global_index >= len(results):
         gr.Error("Lỗi: Dữ liệu không đồng bộ.")
-        return None, None, pd.DataFrame(), "", "", None
+        return None, None, pd.DataFrame(), "", "", None, "", ""
 
     # --- Bước 2: Lấy dữ liệu của ứng viên được chọn ---
     selected_result = results[global_index]
@@ -487,9 +487,11 @@ def on_gallery_select(
         timestamp = target_frame.get('timestamp')
         video_clip_path = create_video_segment(video_path, timestamp)
         
-        # Trả về kết quả cho TRAKE
-        return (target_frame.get('keyframe_path'), video_clip_path, pd.DataFrame(), 
-                "", "", selected_result, html_output)
+        clip_info_html = f"<div style='text-align: center;'>Clip đại diện cho chuỗi</div>"
+
+        # --- SỬA ĐỔI: Trả về 8 giá trị ---
+        return (target_frame.get('keyframe_path'), video_clip_path, pd.DataFrame(),
+                "", "", selected_result, html_output, clip_info_html)
 
     # --- Nhánh 2: Xử lý kết quả đơn lẻ (KIS và QNA) ---
     else:
@@ -523,9 +525,23 @@ def on_gallery_select(
         # Transcript
         transcript = selected_result.get('transcript_text', "Không có transcript.")
 
-        # Trả về kết quả cho KIS/QNA
-        return (selected_image_path, video_clip_path, scores_df, 
-                vqa_answer, transcript, selected_result, "")
+        detailed_info_html = _create_detailed_info_html(selected_result, task_type)
+        
+        clip_info_html = f"""
+        <div style="text-align: center; margin-top: 10px; font-size: 14px; padding: 8px; background-color: #f3f4f6; border-radius: 8px;">
+            Clip 10 giây từ <strong>{os.path.basename(video_path or "N/A")}</strong>
+        </div>
+        """
+
+        # --- SỬA ĐỔI: Trả về 8 giá trị ---
+        return (selected_image_path, 
+                video_clip_path, 
+                scores_df, 
+                vqa_answer, 
+                transcript, 
+                selected_result, 
+                detailed_info_html, 
+                clip_info_html)
 
 def select_all_items(gallery_items):
     """Chọn tất cả các item trong gallery hiện tại."""

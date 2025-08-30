@@ -31,6 +31,59 @@ from utils import (
 )
 import base64
 
+def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> str:
+    """
+    Hàm phụ trợ tạo mã HTML chi tiết cho một kết quả được chọn.
+    *** PHIÊN BẢN CẢI TIẾN ***
+    """
+    # ... (code tạo progress bar không đổi) ...
+    def create_progress_bar(score, color):
+        percentage = max(0, min(100, score * 100))
+        return f"""<div style='background: #e9ecef; border-radius: 5px; overflow: hidden;'><div style='background: {color}; width: {percentage}%; height: 10px; border-radius: 5px;'></div></div>"""
+
+    video_id = result.get('video_id', 'N/A')
+    keyframe_id = result.get('keyframe_id', 'N/A')
+    timestamp = result.get('timestamp', 0)
+    final_score = result.get('final_score', 0)
+    scores = result.get('scores', {})
+
+    # Bảng thông tin cơ bản
+    info_html = f"""
+    <div style='font-size: 14px; line-height: 1.6; background-color: #f8f9fa; padding: 15px; border-radius: 8px;'>
+        <p style='margin: 0;'><strong>📹 Video ID:</strong> <code>{video_id}</code></p>
+        <p style='margin: 5px 0 0 0;'><strong>🖼️ Keyframe ID:</strong> <code>{keyframe_id}</code></p>
+        <p style='margin: 5px 0 0 0;'><strong>⏰ Timestamp:</strong> <code>{timestamp:.2f}s</code></p>
+    </div>
+    """
+
+    # Bảng điểm số chi tiết
+    scores_html = f"""
+    <div style='background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin-top: 15px;'>
+        <h4 style='margin: 0 0 15px 0; color: #111827;'>🏆 Bảng điểm</h4>
+        <div style='margin: 10px 0;'>
+            <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;'>
+                <span><strong>📊 Điểm tổng:</strong></span>
+                <span style='font-weight: bold; font-size: 16px;'>{final_score:.4f}</span>
+            </div>
+            {create_progress_bar(final_score, '#10b981')}
+        </div>
+        """
+    # Thêm các điểm thành phần nếu có
+    score_items = [('CLIP', 'clip', '#3b82f6'), ('Object', 'object', '#f97316'), ('Semantic', 'semantic', '#8b5cf6')]
+    for name, key, color in score_items:
+        if key in scores:
+            scores_html += f"""
+            <div style='margin: 10px 0;'>
+                <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;'>
+                    <span>{name} Score:</span><span>{scores[key]:.3f}</span>
+                </div>
+                {create_progress_bar(scores[key], color)}
+            </div>
+            """
+    scores_html += "</div>"
+    
+    return info_html + scores_html
+
 def encode_image_to_base64(image_path: str) -> str:
     """Mã hóa một file ảnh thành chuỗi base64 để nhúng vào HTML."""
     if not image_path or not os.path.isfile(image_path):
@@ -382,99 +435,97 @@ def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> s
     """
     return html
 
-def on_gallery_select(response_state: Dict[str, Any], gallery_items, selected_indices, evt: gr.SelectData):
+def on_gallery_select(
+    # --- Inputs MỚI ---
+    response_state: Dict[str, Any], 
+    current_page: int,
+    evt: gr.SelectData
+):
     """
-    Khi click 1 ảnh trong gallery: hiển thị preview, toggle chọn/bỏ chọn, cập nhật 'Ảnh đã chọn'.
+    Khi click 1 ảnh trong gallery: Cập nhật toàn bộ Trạm Phân tích ở cột phải.
+    *** PHIÊN BẢN NÂNG CẤP TỪ CODE GỐC CỦA BẠN ***
     """
+    # --- Bước 1: Validate & Tính toán Index Toàn cục ---
     if not response_state or evt is None:
-        current_selection = selected_indices or []
-        return None, "", "", current_selection, f"Đã chọn: {len(current_selection)}", _build_selected_preview(gallery_items, current_selection)
+        gr.Warning("Vui lòng thực hiện tìm kiếm trước.")
+        # Trả về giá trị rỗng cho tất cả outputs của Trạm Phân tích
+        return None, None, pd.DataFrame(), "", "", None
 
     results = response_state.get("results", [])
-    if not results or evt.index >= len(results):
-        gr.Error("Lỗi: Không tìm thấy kết quả tương ứng.")
-        current_selection = selected_indices or []
-        return None, "Lỗi: Dữ liệu không đồng bộ.", "", current_selection, f"Đã chọn: {len(current_selection)}", _build_selected_preview(gallery_items, current_selection)
+    task_type = response_state.get("task_type")
+    
+    # Tính index toàn cục dựa trên trang hiện tại
+    global_index = (current_page - 1) * ITEMS_PER_PAGE + evt.index
+    
+    if not results or global_index >= len(results):
+        gr.Error("Lỗi: Dữ liệu không đồng bộ.")
+        return None, None, pd.DataFrame(), "", "", None
 
-    selected_result = results[evt.index]; task_type = response_state.get('task_type')
+    # --- Bước 2: Lấy dữ liệu của ứng viên được chọn ---
+    selected_result = results[global_index]
 
-    # --- Nhánh 1: Xử lý kết quả tổng hợp TRACK_VQA ---
-    if selected_result.get("is_aggregated_result"):
-        final_answer = selected_result.get("final_answer", "N/A")
-        evidence_paths = selected_result.get("evidence_paths", [])
-        evidence_captions = selected_result.get("evidence_captions", [])
-        
-        evidence_html = ""
-        if evidence_paths:
-            evidence_html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 15px;">'
-            for path, caption in zip(evidence_paths, evidence_captions):
-                image_base64_src = encode_image_to_base64(path)
-                evidence_html += f"""
-                <div style="text-align: center;">
-                    <img src="{image_base64_src}" style="width: 100%; height: auto; border-radius: 8px; border: 2px solid #ddd;" alt="Evidence Frame">
-                    <p style="font-size: 12px; margin: 5px 0 0 0; color: #333;">{caption}</p>
-                </div>
-                """
-            evidence_html += '</div>'
-        else:
-            evidence_html = "<p>Không có hình ảnh bằng chứng nào được tìm thấy.</p>"
-            
-        detailed_info_html = f"""
-        <div style="padding: 20px; border-radius: 12px; background-color: #f8f9fa;">
-            <h3 style="margin: 0 0 15px 0; border-bottom: 2px solid #dee2e6; padding-bottom: 10px;">💡 Kết quả Phân tích Tổng hợp</h3>
-            <div style="background-color: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <p style="font-size: 16px; margin: 0; line-height: 1.6;">{final_answer}</p>
-            </div>
-            <h4 style="margin: 0 0 10px 0;">🖼️ Các hình ảnh bằng chứng:</h4>
-            {evidence_html}
-        </div>
-        """
-        
-        return None, detailed_info_html, "Thông tin tổng hợp cho truy vấn của bạn."
-
-    # --- Nhánh 2: Xử lý kết quả chuỗi TRAKE ---
-    elif task_type == TaskType.TRAKE:
+    # --- Nhánh 1: Xử lý kết quả chuỗi TRAKE ---
+    if task_type == TaskType.TRAKE:
         sequence = selected_result.get('sequence', [])
         if not sequence:
-             return None, "Lỗi: Chuỗi TRAKE rỗng.", ""
+            return None, "Lỗi: Chuỗi TRAKE rỗng.", pd.DataFrame(), "", "", None
         
-        # Lấy frame đầu tiên để tạo clip và làm thông tin chính
+        # Lấy frame đầu tiên của chuỗi làm đại diện
         target_frame = sequence[0]
-        video_path = target_frame.get('video_path')
-        timestamp = target_frame.get('timestamp')
         
-        # Tạo HTML chi tiết cho cả chuỗi
-        seq_html = f"""...""" # Dán code tạo HTML cho TRAKE vào đây
-        detailed_info_html = seq_html
-
-    # --- Nhánh 3: Xử lý kết quả đơn lẻ KIS và QNA ---
-    else:
-        target_frame = selected_result
+        # Tạo HTML đặc biệt cho TRAKE
+        html_output = f"<div style='padding: 15px; background-color: #f3f4f6; border-radius: 8px;'>"
+        html_output += f"<h4 style='margin-top:0;'>Chuỗi hành động ({len(sequence)} bước)</h4>"
+        html_output += f"<p><strong>Video:</strong> <code>{selected_result.get('video_id')}</code> | <strong>Điểm trung bình:</strong> {selected_result.get('final_score', 0):.3f}</p>"
+        html_output += "<div style='display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px;'>"
+        for i, frame in enumerate(sequence):
+            b64_img = encode_image_to_base64(frame.get('keyframe_path'))
+            html_output += f"<div style='text-align: center; flex-shrink: 0;'><p style='margin:0;font-weight:bold;'>Bước {i+1}</p><img src='{b64_img}' style='width:120px; border-radius: 4px; border: 2px solid #ddd;'><p style='font-size:12px;margin:2px 0;'>@{frame.get('timestamp',0):.1f}s</p></div>"
+        html_output += "</div></div>"
+        
         video_path = target_frame.get('video_path')
         timestamp = target_frame.get('timestamp')
-        # Gọi hàm phụ trợ để tạo HTML chi tiết
-        detailed_info_html = _create_detailed_info_html(target_frame, task_type)
+        video_clip_path = create_video_segment(video_path, timestamp)
+        
+        # Trả về kết quả cho TRAKE
+        return (target_frame.get('keyframe_path'), video_clip_path, pd.DataFrame(), 
+                "", "", selected_result, html_output)
 
-    # --- Logic chung cho Nhánh 2 và 3 (TRAKE, KIS, QNA) ---
-    # Chỉ thực thi nếu không phải là TRACK_VQA
-    video_clip_path = create_video_segment(video_path, timestamp)
-    
-    clip_info_html = f"""
-    <div style="background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%); padding: 15px; border-radius: 12px; color: white; text-align: center; margin-top: 10px;">
-        <h4 style="margin: 0;">🎥 Video Clip (10 giây)</h4>
-        <p style="margin: 8px 0 0 0; opacity: 0.9;">
-            Từ ~{max(0, timestamp - 5):.1f}s đến ~{timestamp + 5:.1f}s
-        </p>
-    </div>
-    """
-    
-    s = set(selected_indices or [])
-    if evt.index is not None:
-        if evt.index in s: s.remove(evt.index)
-        else: s.add(evt.index)
-    s_list = sorted(list(s))
-    
-    return video_clip_path, detailed_info_html, clip_info_html, s_list, f"Đã chọn: {len(s_list)}", _build_selected_preview(gallery_items, s_list)
+    # --- Nhánh 2: Xử lý kết quả đơn lẻ (KIS và QNA) ---
+    else:
+        video_path = selected_result.get('video_path')
+        timestamp = selected_result.get('timestamp')
+        
+        # Chuẩn bị dữ liệu
+        selected_image_path = selected_result.get('keyframe_path')
+        video_clip_path = create_video_segment(video_path, timestamp)
+
+        # Bảng điểm
+        scores = selected_result.get('scores', {})
+        scores_data = {"Metric": [], "Value": []}
+        # Thêm các điểm thành phần một cách linh hoạt
+        score_map = {
+            "🏆 Final Score": selected_result.get('final_score', 0),
+            "🖼️ CLIP Score": scores.get('clip', None),
+            "🎯 Object Score": scores.get('object', None),
+            "🧠 Semantic Score": scores.get('semantic', None),
+            "💬 VQA Confidence": scores.get('vqa_confidence', None)
+        }
+        for name, value in score_map.items():
+            if value is not None:
+                scores_data["Metric"].append(name)
+                scores_data["Value"].append(value)
+        scores_df = pd.DataFrame(scores_data)
+
+        # Câu trả lời VQA
+        vqa_answer = selected_result.get('answer', "") if task_type == TaskType.QNA else ""
+
+        # Transcript
+        transcript = selected_result.get('transcript_text', "Không có transcript.")
+
+        # Trả về kết quả cho KIS/QNA
+        return (selected_image_path, video_clip_path, scores_df, 
+                vqa_answer, transcript, selected_result, "")
 
 def select_all_items(gallery_items):
     """Chọn tất cả các item trong gallery hiện tại."""
@@ -698,6 +749,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     gallery_items_state = gr.State([])
     selected_indices_state = gr.State([])
     current_page_state = gr.State(1) 
+    selected_candidate_for_submission = gr.State()
 
     # --- BỐ CỤC CHÍNH 2 CỘT ---
     with gr.Row(variant='panel'):
@@ -811,19 +863,20 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
             zip_file_out = gr.File(label="Tải tệp ZIP của bạn tại đây")
 
         # --- CỘT PHẢI (1/3 không gian): XEM CHI TIẾT & NỘP BÀI ---
-        with gr.Column(scale=1):
+        with gr.Column(scale=1): # Cột phải
+            gr.Markdown("### Trạm Phân tích")
+            selected_image_display = gr.Image(label="Ảnh Đại diện", type="filepath")
+            video_player = gr.Video(label="🎬 Clip 10 giây", autoplay=True)
             
-            # --- 1. Khu vực Xem Video & Chi tiết ---
-            gr.Markdown("### Chi tiết Kết quả")
-            video_player = gr.Video(label="🎬 Video Clip (10 giây)", autoplay=True)
-            clip_info = gr.HTML()
-            detailed_info = gr.HTML()
-
-            # --- 2. Khu vực Nộp bài ---
-            with gr.Accordion("💾 Tạo File Nộp Bài", open=True):
-                query_id_input = gr.Textbox(label="Nhập Query ID", placeholder="Ví dụ: query_01")
-                submission_button = gr.Button("Tạo File")
-                submission_file_output = gr.File(label="Tải file nộp bài")
+            with gr.Tabs():
+                with gr.TabItem("📊 Phân tích & Điểm số"):
+                    # Dùng HTML để hiển thị thông tin TRAKE hoặc KIS/QNA
+                    detailed_info_html = gr.HTML()
+                    scores_display = gr.DataFrame(headers=["Metric", "Value"], label="Bảng điểm")
+                    
+                with gr.TabItem("💬 VQA & Transcript"):
+                    vqa_answer_display = gr.Textbox(label="Câu trả lời VQA", interactive=False, lines=5)
+                    transcript_display = gr.Textbox(label="📝 Transcript", lines=8, interactive=False)
 
     gr.HTML(usage_guide_html)
     gr.HTML(app_footer_html)
@@ -851,14 +904,21 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
         inputs=[gallery_items_state, current_page_state, gr.Textbox("▶️ Trang sau", visible=False)],
         outputs=[results_gallery, current_page_state, page_info_display]
     )
-    # 2. Sự kiện Lựa chọn trong Gallery chính
+    # 1. Định nghĩa outputs cho sự kiện select
+    analysis_outputs = [
+        selected_image_display,
+        video_player,
+        scores_display,
+        vqa_answer_display,
+        transcript_display,
+        selected_candidate_for_submission,
+        detailed_info_html # Thêm output cho HTML
+    ]
+    # 2. Gán sự kiện select của gallery
     results_gallery.select(
         fn=on_gallery_select,
-        inputs=[response_state, gallery_items_state, selected_indices_state],
-        outputs=[
-            video_player, detailed_info, clip_info, 
-            selected_indices_state, selected_count_md, selected_preview
-        ]
+        inputs=[response_state, current_page_state], 
+        outputs=analysis_outputs
     )
 
     # 3. Sự kiện cho các nút Chọn/Bỏ chọn/Tải về

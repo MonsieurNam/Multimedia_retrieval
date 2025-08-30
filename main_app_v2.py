@@ -82,6 +82,75 @@ def create_mock_video_segment(video_path, timestamp):
 # ==============================================================================
 # === CÁC HÀM LOGIC CHO GIAO DIỆN ===
 # ==============================================================================
+def reorder_submission_list(submission_list_df: pd.DataFrame, direction: str, evt: gr.SelectData):
+    """
+    Sắp xếp lại danh sách nộp bài bằng cách di chuyển hàng được chọn lên hoặc xuống.
+    """
+    if submission_list_df is None or submission_list_df.empty or evt.index is None:
+        gr.Warning("Vui lòng chọn một hàng trong danh sách nộp bài để di chuyển.")
+        return submission_list_df
+
+    selected_index = evt.index[0]
+    
+    if direction == "up":
+        if selected_index == 0: return submission_list_df # Đã ở trên cùng
+        swap_with_index = selected_index - 1
+    elif direction == "down":
+        if selected_index == len(submission_list_df) - 1: return submission_list_df # Đã ở dưới cùng
+        swap_with_index = selected_index + 1
+    else:
+        return submission_list_df
+
+    # Hoán đổi vị trí hai hàng
+    b, a = submission_list_df.iloc[selected_index].copy(), submission_list_df.iloc[swap_with_index].copy()
+    submission_list_df.iloc[selected_index], submission_list_df.iloc[swap_with_index] = a, b
+    
+    gr.Info(f"Đã di chuyển hàng {selected_index+1} lên vị trí {swap_with_index+1}" if direction == "up" else f"Đã di chuyển hàng {selected_index+1} xuống vị trí {swap_with_index+1}")
+    
+    return submission_list_df
+
+def remove_from_submission_list(submission_list_df: pd.DataFrame, evt: gr.SelectData):
+    """
+    Xóa hàng được chọn khỏi danh sách nộp bài.
+    """
+    if submission_list_df is None or submission_list_df.empty or evt.index is None:
+        gr.Warning("Vui lòng chọn một hàng để xóa.")
+        return submission_list_df
+
+    selected_index = evt.index[0]
+    
+    # Xóa hàng tại vị trí đã chọn
+    updated_df = submission_list_df.drop(submission_list_df.index[selected_index]).reset_index(drop=True)
+    
+    gr.Info(f"Đã xóa hàng {selected_index+1} khỏi danh sách.")
+    
+    return updated_df
+
+def handle_submission(submission_list_df: pd.DataFrame, query_id: str):
+    """
+    Tạo và cung cấp file nộp bài từ DataFrame trong State.
+    """
+    if submission_list_df is None or submission_list_df.empty:
+        gr.Warning("Danh sách nộp bài rỗng. Không có gì để tạo file.")
+        return None
+    
+    if not query_id or not query_id.strip():
+        gr.Warning("Vui lòng nhập Query ID để tạo file.")
+        return None
+    
+    # Định dạng lại DataFrame lần cuối trước khi lưu
+    # Bỏ các cột không cần thiết cho file nộp bài
+    submission_cols = [col for col in submission_list_df.columns if col.startswith('video_id') or col.startswith('frame_moment_') or col.startswith('answer')]
+    final_df = submission_list_df[submission_cols]
+
+    # Giả sử chúng ta có một hàm format_for_submission thật
+    # Ở đây chúng ta chỉ cần lưu file
+    output_path = f"/kaggle/working/{query_id.strip()}_submission.csv"
+    final_df.to_csv(output_path, index=False, header=True) # Tạm thời để header để dễ debug
+    
+    gr.Success(f"Đã tạo file nộp bài thành công tại: {output_path}")
+    
+    return output_path
 
 def handle_search_and_update_workspaces(query_text: str):
     """
@@ -304,12 +373,22 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
                     detailed_info = gr.HTML("Thông tin chi tiết sẽ hiện ở đây khi bạn chọn một ứng viên.")
                 
                 with gr.TabItem("Danh sách Nộp bài (Top 100)"):
-                    submission_list_table = gr.DataFrame(label="Danh sách này sẽ được sắp xếp lại bằng tay ở GĐ4", interactive=True)
+                    # **CÁC NÚT ĐIỀU KHIỂN MỚI**
+                    with gr.Row():
+                        up_button = gr.Button("▲ Di chuyển Lên")
+                        down_button = gr.Button("▼ Di chuyển Xuống")
+                        remove_button = gr.Button("❌ Xóa khỏi danh sách")
+                    
+                    submission_list_table = gr.DataFrame(
+                        label="Click vào hàng để chọn. Dùng các nút trên để sắp xếp lại.",
+                        interactive=True
+                    )
             
             with gr.Group():
                  gr.Markdown("#### Nộp bài")
                  query_id_input = gr.Textbox(label="Query ID", placeholder="query_01")
-                 submission_button = gr.Button("Tạo File Nộp bài")
+                 submission_button = gr.Button("Tạo File Nộp bài", variant="primary")
+                 submission_file_output = gr.File(label="Tải file nộp bài tại đây")
 
     # ==============================================================================
     # === KẾT NỐI CÁC SỰ KIỆN TƯƠNG TÁC ===
@@ -371,6 +450,37 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
     ).then(
         fn=clear_current_sequence,
         outputs=[current_sequence_table, validation_status]
+    )
+    up_button.click(
+        fn=reorder_submission_list,
+        inputs=[submission_list_state, gr.State("up")], # Dùng gr.State để truyền tham số "up"
+        outputs=[submission_list_table, submission_list_state] # Cập nhật cả bảng và state
+    )
+    
+    down_button.click(
+        fn=reorder_submission_list,
+        inputs=[submission_list_state, gr.State("down")],
+        outputs=[submission_list_table, submission_list_state]
+    )
+    
+    remove_button.click(
+        fn=remove_from_submission_list,
+        inputs=[submission_list_state],
+        outputs=[submission_list_table, submission_list_state]
+    )
+    
+    # Cập nhật state khi bảng thay đổi do người dùng sắp xếp
+    submission_list_table.change(
+        fn=lambda x: x,
+        inputs=[submission_list_table],
+        outputs=[submission_list_state]
+    )
+
+    # **SỰ KIỆN MỚI: Nút Nộp bài**
+    submission_button.click(
+        fn=handle_submission,
+        inputs=[submission_list_state, query_id_input],
+        outputs=[submission_file_output]
     )
 
 if __name__ == "__main__":

@@ -169,7 +169,6 @@ def perform_search(
     # === BƯỚC 1: KHỞI TẠO BIẾN & VALIDATE INPUT =================================
     # ==============================================================================
     
-    # Khởi tạo tất cả 9 biến output với giá trị mặc định (rỗng)
     gallery_paths = []
     status_msg = ""
     response_state = None
@@ -179,13 +178,16 @@ def perform_search(
     selected_indices_state = []
     selected_count_md = "Đã chọn: 0"
     selected_preview = []
+    current_page = 1
+    page_info = "Trang 1 / 1"
 
     if not query_text.strip():
         gr.Warning("Vui lòng nhập truy vấn tìm kiếm!")
         status_msg = "<div style='color: orange;'>⚠️ Vui lòng nhập truy vấn và bấm Tìm kiếm.</div>"
-        # Trả về tuple 9 giá trị
+        # --- SỬA ĐỔI 1: Trả về tuple 11 giá trị ---
         return (gallery_paths, status_msg, response_state, analysis_html, stats_info_html, 
-                gallery_items_state, selected_indices_state, selected_count_md, selected_preview)
+                gallery_items_state, selected_indices_state, selected_count_md, selected_preview,
+                current_page, page_info)
 
     # ==============================================================================
     # === BƯỚC 2: YIELD TRẠNG THÁI "ĐANG XỬ LÝ" ===================================
@@ -198,9 +200,9 @@ def perform_search(
     </div>
     """
     
-    # Yield để cập nhật UI, trả về đúng 9 giá trị
     yield (gallery_paths, status_update, response_state, analysis_html, stats_info_html, 
-           gallery_items_state, selected_indices_state, selected_count_md, selected_preview)
+           gallery_items_state, selected_indices_state, selected_count_md, selected_preview,
+           current_page, page_info)
     
     # ==============================================================================
     # === BƯỚC 3: GỌI BACKEND & XỬ LÝ LỖI ========================================
@@ -232,7 +234,8 @@ def perform_search(
         status_msg = f"<div style='color: red;'>🔥 Đã xảy ra lỗi backend: {e}</div>"
         # Trả về trạng thái lỗi và các giá trị rỗng
         return (gallery_paths, status_msg, response_state, analysis_html, stats_info_html, 
-                gallery_items_state, selected_indices_state, selected_count_md, selected_preview)
+                gallery_items_state, selected_indices_state, selected_count_md, selected_preview,
+                current_page, page_info)
 
     # ==============================================================================
     # === BƯỚC 4: ĐỊNH DẠNG KẾT QUẢ & CẬP NHẬT UI CUỐI CÙNG ======================
@@ -272,7 +275,6 @@ def perform_search(
     """
     initial_gallery_view = gallery_paths[:ITEMS_PER_PAGE]
     
-    # Reset page state về trang 1 (index 0)
     current_page = 1
     total_pages = int(np.ceil(len(gallery_paths) / ITEMS_PER_PAGE)) or 1
     page_info = f"Trang {current_page} / {total_pages}"
@@ -280,10 +282,10 @@ def perform_search(
     yield (
         initial_gallery_view,   # 1. results_gallery (chỉ 20 ảnh đầu)
         status_msg,             # 2. status_output
-        response_state,         # 3. response_state (lưu toàn bộ 100 kết quả)
+        response_state,         # 3. response_state
         analysis_html,          # 4. gemini_analysis
         stats_info_html,        # 5. stats_info
-        gallery_paths,          # 6. gallery_items_state (lưu toàn bộ 100 đường dẫn)
+        gallery_paths,          # 6. gallery_items_state (toàn bộ 100 đường dẫn)
         [],                     # 7. selected_indices_state (reset)
         "Đã chọn: 0",           # 8. selected_count_md (reset)
         [],                     # 9. selected_preview (reset)
@@ -782,14 +784,13 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                 next_page_button = gr.Button("▶️ Trang sau")
                 
             results_gallery = gr.Gallery(
-                label="Click vào ảnh để xem chi tiết và để CHỌN/BỎ CHỌN",
+                label="Click vào một ảnh để phân tích sâu",
                 show_label=True,
                 elem_id="results-gallery",
-                columns=5,
-                object_fit="cover",
-                height=700,
-                allow_preview=False,
-                preview=True
+                columns=10, # Giữ nguyên mật độ cao
+                object_fit="contain",
+                height=580, # Chiều cao cố định, không cần cuộn
+                allow_preview=False
             )
 
             # --- 5. Khu vực Thu thập & Tải về ---

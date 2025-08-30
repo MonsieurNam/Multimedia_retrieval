@@ -21,7 +21,7 @@ from search_core.basic_searcher import BasicSearcher
 from search_core.semantic_searcher import SemanticSearcher
 from search_core.master_searcher import MasterSearcher
 from search_core.task_analyzer import TaskType
-from utils.formatting import format_results_for_mute_gallery
+from utils.formatting import format_list_for_submission, format_results_for_mute_gallery
 
 from utils import (
     create_video_segment,
@@ -602,9 +602,195 @@ def handle_submission(response_state: Dict[str, Any], query_id: str):
 def clear_all():
     """Nâng cấp để xóa tất cả các output và state mới."""
     return (
-        [], "", None, "", "", None, "", "", "", None, # Outputs cũ
-        "Đã chọn: 0", [], [], None, [] # Outputs mới (selection)
+        # ... (các giá trị cũ không đổi) ...
+        # gallery_paths, status_msg, response_state, analysis_html, stats_info_html, 
+        # gallery_items_state, selected_indices_state, selected_count_md, selected_preview,
+        # current_page, page_info
+        
+        # --- Thêm các giá trị reset cho các component mới ---
+        [], # 1. results_gallery
+        "", # 2. status_output
+        None, # 3. response_state
+        "", # 4. gemini_analysis
+        "", # 5. stats_info
+        [], # 6. gallery_items_state
+        [], # 7. selected_indices_state
+        "Đã chọn: 0", # 8. selected_count_md
+        [], # 9. selected_preview
+        1, # 10. current_page_state
+        "Trang 1 / 1", # 11. page_info_display
+        
+        # --- Reset cho Trạm Phân tích & Vùng Nộp bài ---
+        None, # 12. selected_image_display
+        None, # 13. video_player
+        pd.DataFrame(), # 14. scores_display
+        "", # 15. vqa_answer_display
+        "", # 16. transcript_display
+        None, # 17. selected_candidate_for_submission
+        "", # 18. detailed_info
+        "", # 19. clip_info
+        "", # 20. submission_list_display
+        [], # 21. submission_list_state
+        gr.Dropdown.update(choices=[], value=None), # 22. submission_list_selector
+        "", # 23. query_id_input
+        None # 24. submission_file_output
     )
+    
+def _format_submission_list_for_display(submission_list: list) -> str:
+    """Hàm phụ trợ để biến danh sách submission thành một chuỗi text đẹp mắt."""
+    if not submission_list:
+        return "Chưa có kết quả nào được thêm vào."
+    
+    display_text = ""
+    for i, item in enumerate(submission_list):
+        task_type = item.get('task_type')
+        item_info = ""
+        if task_type == TaskType.TRAKE:
+            item_info = f"TRAKE Seq | Vid: {item.get('video_id')} | Score: {item.get('final_score', 0):.3f}"
+        else: # KIS, QNA
+            item_info = f"Frame | {item.get('keyframe_id')} | Score: {item.get('final_score', 0):.3f}"
+        
+        display_text += f"{i+1:02d}. {item_info}\n" # Thêm số thứ tự 2 chữ số
+    return display_text
+
+def add_to_submission_list(
+    submission_list: list, 
+    candidate: Dict[str, Any], 
+    response_state: Dict[str, Any], # Cần response_state để lấy task_type
+    position: str
+):
+    """Thêm một ứng viên vào danh sách nộp bài.
+    *** PHIÊN BẢN CẬP NHẬT: Đồng bộ Dropdown ***
+    """
+    if not candidate:
+        gr.Warning("Chưa có ứng viên nào được chọn để thêm!")
+        # Tạo choices cho Dropdown từ danh sách hiện tại
+        current_choices = [f"{i+1}. {item.get('keyframe_id') or f'TRAKE ({item.get('video_id')})'}" for i, item in enumerate(submission_list)]
+        return _format_submission_list_for_display(submission_list), submission_list, gr.Dropdown.update(choices=current_choices)
+
+    # ... (logic lấy task_type, tạo item_to_add, kiểm tra trùng lặp không đổi) ...
+    task_type = response_state.get("task_type")
+    item_to_add = candidate.copy()
+    item_to_add['task_type'] = task_type
+    
+    existing_ids = {item.get('keyframe_id') for item in submission_list if item.get('keyframe_id')}
+    if task_type != TaskType.TRAKE and item_to_add.get('keyframe_id') in existing_ids:
+        gr.Info("Frame này đã có trong danh sách nộp bài.")
+        current_choices = [f"{i+1}. {item.get('keyframe_id') or f'TRAKE ({item.get('video_id')})'}" for i, item in enumerate(submission_list)]
+        return _format_submission_list_for_display(submission_list), submission_list, gr.Dropdown.update(choices=current_choices)
+        
+    # Thêm vào vị trí mong muốn
+    if position == 'top':
+        submission_list.insert(0, item_to_add)
+    else: # bottom
+        submission_list.append(item_to_add)
+        
+    # Giới hạn danh sách ở 100
+    if len(submission_list) > 100:
+        if position == 'top':
+             submission_list = submission_list[:100]
+        else: # Nếu thêm vào cuối, loại bỏ phần tử đầu
+             submission_list = submission_list[-100:]
+        gr.Info("Danh sách đã đạt 100 kết quả.")
+
+    gr.Success(f"Đã thêm kết quả vào {'đầu' if position == 'top' else 'cuối'} danh sách!")
+    
+    # --- SỬA ĐỔI QUAN TRỌNG ---
+    # Tạo danh sách choices mới cho Dropdown từ submission_list đã được cập nhật
+    new_choices = [
+        f"{i+1}. {item.get('keyframe_id') or f'TRAKE ({item.get('video_id')})'}" 
+        for i, item in enumerate(submission_list)
+    ]
+    
+    # Trả về thêm một giá trị cho Dropdown
+    return (_format_submission_list_for_display(submission_list), 
+            submission_list, 
+            gr.Dropdown.update(choices=new_choices, value=None)) # Reset value để tránh lỗi
+
+def clear_submission_list():
+    """Xóa toàn bộ danh sách nộp bài.
+    *** PHIÊN BẢN CẬP NHẬT: Đồng bộ Dropdown ***
+    """
+    gr.Info("Đã xóa danh sách nộp bài.")
+    # --- SỬA ĐỔI QUAN TRỌNG ---
+    # Trả về thêm lệnh cập nhật cho Dropdown để xóa choices
+    return "Chưa có kết quả nào được thêm vào.", [], gr.Dropdown.update(choices=[], value=None)
+
+# Cập nhật hàm handle_submission
+def handle_submission(submission_list: list, query_id: str):
+    if not submission_list:
+        gr.Warning("Danh sách nộp bài đang trống.")
+        return None
+    
+    if not query_id.strip():
+        gr.Warning("Vui lòng nhập Query ID để tạo file.")
+        return None
+        
+    # Gọi hàm format mới
+    submission_df = format_list_for_submission(submission_list, max_results=100)
+    
+    if submission_df.empty:
+        gr.Warning("Không thể định dạng kết quả để nộp bài.")
+        return None
+              
+    file_path = generate_submission_file(submission_df, query_id=query_id)
+    return file_path
+
+def modify_submission_list(
+    submission_list: list, 
+    selected_item_index: str, # Dropdown trả về string
+    action: str
+):
+    """
+    Sửa đổi danh sách nộp bài (di chuyển lên/xuống, xóa).
+    """
+    if not submission_list:
+        gr.Info("Danh sách trống, không có gì để sửa.")
+        return _format_submission_list_for_display(submission_list), submission_list, None
+
+    if not selected_item_index:
+        gr.Warning("Vui lòng chọn một mục từ danh sách để thao tác.")
+        return _format_submission_list_for_display(submission_list), submission_list, selected_item_index
+
+    try:
+        # Index từ Dropdown là '1. ...', chúng ta cần lấy số 1 và trừ 1
+        index_to_modify = int(selected_item_index.split('.')[0]) - 1
+        
+        if not (0 <= index_to_modify < len(submission_list)):
+            raise ValueError("Index không hợp lệ.")
+
+    except (ValueError, IndexError):
+        gr.Error("Lựa chọn không hợp lệ. Vui lòng thử lại.")
+        return _format_submission_list_for_display(submission_list), submission_list, None
+
+    # Thực hiện hành động
+    if action == 'move_up':
+        if index_to_modify > 0:
+            # Hoán đổi vị trí
+            submission_list[index_to_modify], submission_list[index_to_modify - 1] = \
+                submission_list[index_to_modify - 1], submission_list[index_to_modify]
+            gr.Success(f"Đã di chuyển mục #{index_to_modify + 1} lên trên.")
+        else:
+            gr.Info("Mục đã ở vị trí cao nhất.")
+            
+    elif action == 'move_down':
+        if index_to_modify < len(submission_list) - 1:
+            # Hoán đổi vị trí
+            submission_list[index_to_modify], submission_list[index_to_modify + 1] = \
+                submission_list[index_to_modify + 1], submission_list[index_to_modify]
+            gr.Success(f"Đã di chuyển mục #{index_to_modify + 1} xuống dưới.")
+        else:
+            gr.Info("Mục đã ở vị trí thấp nhất.")
+
+    elif action == 'remove':
+        removed_item = submission_list.pop(index_to_modify)
+        gr.Success(f"Đã xóa '{removed_item.get('keyframe_id') or 'TRAKE sequence'}' khỏi danh sách.")
+
+    # Cập nhật Dropdown choices
+    new_choices = [f"{i+1}. {item.get('keyframe_id') or 'TRAKE'}" for i, item in enumerate(submission_list)]
+    
+    # Cập nhật hiển thị và state
+    return _format_submission_list_for_display(submission_list), submission_list, gr.Dropdown.update(choices=new_choices, value=None)
 
 print("--- Giai đoạn 4/4: Đang xây dựng giao diện người dùng...")
 
@@ -711,37 +897,7 @@ app_header_html = """
             </div>
         </div>
     """
-usage_guide_html = """
-        <div style="padding: 20px; background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%); border-radius: 12px; color: white;">
-            <h3 style="margin-top: 0; color: white;">Cách sử dụng hệ thống:</h3>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px;">
-                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;">
-                    <h4 style="margin: 0 0 10px 0; color: white;">🔍 Tìm kiếm</h4>
-                    <ul style="margin: 0; padding-left: 20px;">
-                        <li>Nhập mô tả chi tiết bằng tiếng Việt</li>
-                        <li>Sử dụng từ ngữ cụ thể về đối tượng, hành động, địa điểm</li>
-                        <li>Chọn chế độ Semantic Search để có kết quả tốt nhất</li>
-                    </ul>
-                </div>
-                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;">
-                    <h4 style="margin: 0 0 10px 0; color: white;">🎬 Xem video</h4>
-                    <ul style="margin: 0; padding-left: 20px;">
-                        <li>Click vào bất kỳ ảnh nào trong kết quả</li>
-                        <li>Video clip 10 giây sẽ được tạo tự động</li>
-                        <li>Xem thông tin chi tiết về điểm số và đối tượng</li>
-                    </ul>
-                </div>
-                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;">
-                    <h4 style="margin: 0 0 10px 0; color: white;">⚙️ Tùy chỉnh</h4>
-                    <ul style="margin: 0; padding-left: 20px;">
-                        <li>Điều chỉnh số lượng kết quả (6-24)</li>
-                        <li>So sánh giữa Basic CLIP và Semantic Search</li>
-                        <li>Xem phân tích AI từ Gemini</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-        """
+
 app_footer_html = """
     <div style="text-align: center; margin-top: 40px; padding: 20px; background: linear-gradient(135deg, #636e72 0%, #2d3436 100%); border-radius: 12px; color: white;">
         <p style="margin: 0; opacity: 0.8;">
@@ -765,6 +921,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     gallery_items_state = gr.State([])
     selected_indices_state = gr.State([])
     current_page_state = gr.State(1) 
+    submission_list_state = gr.State([])
     selected_candidate_for_submission = gr.State()
 
     # --- BỐ CỤC CHÍNH 2 CỘT ---
@@ -858,26 +1015,9 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                 elem_id="results-gallery",
                 columns=5, # Giữ nguyên mật độ cao
                 object_fit="contain",
-                height=580, # Chiều cao cố định, không cần cuộn
+                height=700, # Chiều cao cố định, không cần cuộn
                 allow_preview=False
             )
-
-            # --- 5. Khu vực Thu thập & Tải về ---
-            gr.Markdown("### 3. Thu thập & Tải về")
-            selected_count_md = gr.Markdown("Đã chọn: 0")
-            selected_preview = gr.Gallery(
-                label="Ảnh đã chọn (Click để bỏ chọn)",
-                show_label=True,
-                columns=8,
-                rows=2,
-                height=220,
-                object_fit="cover"
-            )
-            with gr.Row():
-                btn_select_all = gr.Button("Chọn tất cả")
-                btn_clear_sel = gr.Button("Bỏ chọn tất cả")
-                btn_download = gr.Button("Tải ZIP các ảnh đã chọn", variant="primary")
-            zip_file_out = gr.File(label="Tải tệp ZIP của bạn tại đây")
 
         # --- CỘT PHẢI (1/3 không gian): XEM CHI TIẾT & NỘP BÀI ---
         with gr.Column(scale=1):
@@ -901,13 +1041,41 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
             clip_info = gr.HTML() 
 
             gr.Markdown("### 4. Vùng Nộp bài")
-            with gr.Accordion("💾 Tạo File Nộp Bài", open=True):
-                # Khai báo các component nộp bài
-                query_id_input = gr.Textbox(label="Nhập Query ID", placeholder="Ví dụ: query_01")
-                submission_button = gr.Button("💾 Tạo File CSV")
-                submission_file_output = gr.File(label="Tải file nộp bài tại đây")
+        
+            with gr.Row():
+                add_top_button = gr.Button("➕ Thêm vào Top 1", variant="primary")
+                add_bottom_button = gr.Button("➕ Thêm vào cuối")
+            
+            with gr.Tabs():
+                with gr.TabItem("📋 Danh sách Nộp bài"):
+                    submission_list_display = gr.Textbox(
+                        label="Thứ tự Nộp bài (Top 1 ở trên cùng)",
+                        lines=15,
+                        interactive=False,
+                        value="Chưa có kết quả nào."
+                    )
+                    
+                    # --- THÊM MỚI: Khu vực Tinh chỉnh Thứ hạng ---
+                    gr.Markdown("--- \n ### Tinh chỉnh Thứ hạng")
+                    
+                    submission_list_selector = gr.Dropdown(
+                        label="Chọn mục để thao tác",
+                        choices=[],
+                        interactive=True
+                    )
+                    
+                    with gr.Row():
+                        move_up_button = gr.Button("⬆️ Di chuyển lên")
+                        move_down_button = gr.Button("⬇️ Di chuyển xuống")
+                        remove_button = gr.Button("🗑️ Xóa mục đã chọn", variant="stop")
+                    
+                    clear_submission_button = gr.Button("💥 Xóa toàn bộ danh sách")
 
-    gr.HTML(usage_guide_html)
+                with gr.TabItem("💾 Xuất File"):
+                    query_id_input = gr.Textbox(label="Nhập Query ID", placeholder="Ví dụ: query_01")
+                    submission_button = gr.Button("💾 Tạo File CSV")
+                    submission_file_output = gr.File(label="Tải file nộp bài tại đây")
+
     gr.HTML(app_footer_html)
     
     search_inputs = [
@@ -917,7 +1085,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     ]
     search_outputs = [
         results_gallery, status_output, response_state, gemini_analysis, stats_info,
-        gallery_items_state, selected_indices_state, selected_count_md, selected_preview,  current_page_state, page_info_display 
+        gallery_items_state, selected_indices_state, current_page_state, page_info_display 
     ]
     search_button.click(fn=perform_search, inputs=search_inputs, outputs=search_outputs)
     query_input.submit(fn=perform_search, inputs=search_inputs, outputs=search_outputs)
@@ -950,40 +1118,74 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
         outputs=analysis_outputs
     )
 
-    # 3. Sự kiện cho các nút Chọn/Bỏ chọn/Tải về
-    btn_select_all.click(
-        fn=select_all_items,
-        inputs=[gallery_items_state],
-        outputs=[selected_indices_state, selected_count_md, selected_preview]
+    # 3. Sự kiện cho Vùng Nộp bài
+
+    # --- SỬA ĐỔI: Định nghĩa danh sách outputs cho các hành động add/clear ---
+    add_clear_outputs = [
+        submission_list_display, 
+        submission_list_state, 
+        submission_list_selector # Component Dropdown
+    ]
+
+    # Cập nhật outputs cho các nút Add
+    add_top_button.click(
+        fn=add_to_submission_list,
+        inputs=[submission_list_state, selected_candidate_for_submission, response_state, gr.Textbox("top", visible=False)],
+        outputs=add_clear_outputs
     )
-    btn_clear_sel.click(
-        fn=clear_selection,
-        inputs=[],
-        outputs=[selected_indices_state, selected_count_md, selected_preview]
-    )
-    selected_preview.select(
-        fn=deselect_from_selected_preview,
-        inputs=[gallery_items_state, selected_indices_state],
-        outputs=[selected_indices_state, selected_count_md, selected_preview]
-    )
-    btn_download.click(
-        fn=download_selected_zip,
-        inputs=[gallery_items_state, selected_indices_state],
-        outputs=[zip_file_out]
+    
+    add_bottom_button.click(
+        fn=add_to_submission_list,
+        inputs=[submission_list_state, selected_candidate_for_submission, response_state, gr.Textbox("bottom", visible=False)],
+        outputs=add_clear_outputs
     )
 
-    # 4. Sự kiện Nộp bài
+    # Cập nhật outputs cho nút Clear
+    clear_submission_button.click(
+        fn=clear_submission_list,
+        inputs=[],
+        outputs=add_clear_outputs
+    )
+    
+    # Sự kiện cho các nút tinh chỉnh (đã code ở bước trước)
+    modify_inputs = [submission_list_state, submission_list_selector]
+    modify_outputs = [submission_list_display, submission_list_state, submission_list_selector]
+    
+    move_up_button.click(
+        fn=modify_submission_list,
+        inputs=modify_inputs + [gr.Textbox("move_up", visible=False)],
+        outputs=modify_outputs
+    )
+    
+    move_down_button.click(
+        fn=modify_submission_list,
+        inputs=modify_inputs + [gr.Textbox("move_down", visible=False)],
+        outputs=modify_outputs
+    )
+    
+    remove_button.click(
+        fn=modify_submission_list,
+        inputs=modify_inputs + [gr.Textbox("remove", visible=False)],
+        outputs=modify_outputs
+    )
+    
     submission_button.click(
         fn=handle_submission,
-        inputs=[response_state, query_id_input],
+        inputs=[submission_list_state, query_id_input],
         outputs=[submission_file_output]
     )
 
     # 5. Sự kiện Xóa tất cả
     clear_outputs = [
         results_gallery, status_output, response_state, gemini_analysis, stats_info,
-        video_player, detailed_info, clip_info, query_id_input, submission_file_output,
-        selected_count_md, selected_indices_state, gallery_items_state, zip_file_out, selected_preview
+        gallery_items_state, selected_indices_state,
+        current_page_state, page_info_display,
+        
+        selected_image_display, video_player, scores_display, vqa_answer_display,
+        transcript_display, selected_candidate_for_submission, detailed_info, clip_info,
+        
+        submission_list_display, submission_list_state, submission_list_selector,
+        query_id_input, submission_file_output
     ]
     clear_button.click(fn=clear_all, inputs=None, outputs=clear_outputs)
 

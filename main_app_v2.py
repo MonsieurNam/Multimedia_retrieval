@@ -17,6 +17,22 @@ class MockTaskType(Enum):
     KIS = "Textual KIS"
     QNA = "Question Answering"
     TRAKE = "Action Keyframe Tracking"
+    
+def create_mock_trake_steps(num_steps=4, num_candidates_per_step=10):
+    """Nâng cấp để trả về DataFrame cho mỗi bước."""
+    all_steps_dfs = []
+    base_timestamp = 100
+    for step in range(num_steps):
+        data = {
+            'keyframe_id': [f'L01_V001_{step}_{i:03d}' for i in range(num_candidates_per_step)],
+            'video_id': ['L01_V001'] * num_candidates_per_step,
+            'timestamp': np.round(np.sort(np.random.uniform(base_timestamp, base_timestamp + 50, num_candidates_per_step)), 2),
+            'final_score': np.round(np.random.uniform(0.6, 0.9, num_candidates_per_step), 4),
+            'video_path': ['/kaggle/input/aic-2024-public-test-data-2nd/videos/L01_V001.mp4'] * num_candidates_per_step
+        }
+        all_steps_dfs.append(pd.DataFrame(data))
+        base_timestamp += 100 # Đảm bảo các bước sau có timestamp lớn hơn
+    return all_steps_dfs
 
 def create_mock_kis_qna_df(num_rows=200):
     """Tạo một DataFrame giả lập cho kết quả KIS/Q&A."""
@@ -53,26 +69,20 @@ def create_mock_trake_steps(num_steps=4, num_candidates_per_step=50):
 class MockMasterSearcher:
     """Class MasterSearcher giả lập."""
     def search(self, query: str, config: dict = None):
-        print(f"--- MOCK BACKEND: Nhận truy vấn '{query}' ---")
-        time.sleep(2) # Giả lập thời gian xử lý
-        if "nhảy" in query or "(1)" in query or "bước" in query:
-            print("--- MOCK BACKEND: Phân loại là TRAKE ---")
-            return {
-                'task_type': MockTaskType.TRAKE,
-                'query_analysis': {'task_type': 'TRAKE', 'search_context': query, 'objects_en': ['jump', 'athlete']},
-                'kis_qna_candidates': pd.DataFrame(),
-                'trake_step_candidates': create_mock_trake_steps(num_steps=4)
-            }
-        else:
-            print("--- MOCK BACKEND: Phân loại là KIS/QNA ---")
-            return {
-                'task_type': MockTaskType.KIS,
-                'query_analysis': {'task_type': 'KIS', 'search_context': query, 'objects_en': ['car', 'street']},
-                'kis_qna_candidates': create_mock_kis_qna_df(200),
-                'trake_step_candidates': []
-            }
+        time.sleep(1)
+        # Luôn trả về kết quả TRAKE để test
+        print("--- MOCK BACKEND: Luôn trả về dữ liệu TRAKE để test Giai đoạn 3 ---")
+        return {
+            'task_type': MockTaskType.TRAKE,
+            'query_analysis': {'task_type': 'TRAKE', 'search_context': query, 'sub_queries': ["bước 1", "bước 2", "bước 3", "bước 4"]},
+            'kis_qna_candidates': pd.DataFrame(),
+            'trake_step_candidates': create_mock_trake_steps(num_steps=4)
+        }
 
 mock_master_searcher = MockMasterSearcher()
+
+def create_mock_video_segment(video_path, timestamp):
+    return '/kaggle/input/aic-2024-public-test-data-2nd/videos/L01_V001.mp4'
 
 def perform_search(query_text: str):
     # (Hàm này giữ nguyên logic từ GĐ1)
@@ -171,6 +181,101 @@ def add_to_submission_list(submission_list: pd.DataFrame, kis_qna_df: pd.DataFra
     # 2. `None` để xóa lựa chọn trong kis_qna_table.
     return updated_list, None
 
+def build_trake_workspace(trake_steps_data):
+    """
+    Tạo hoặc cập nhật các component trong không gian làm việc TRAKE.
+    Hàm này sẽ trả về một list các Gradio component.
+    """
+    if not trake_steps_data:
+        # Ẩn không gian làm việc nếu không có dữ liệu
+        return [gr.HTML(visible=False)] * (len(trake_candidate_tables) * 2)
+
+    outputs = []
+    # `trake_steps_data` là một list các DataFrame
+    for i, df_step in enumerate(trake_steps_data):
+        # Cập nhật Markdown header
+        outputs.append(gr.Markdown(f"<h4>Bước {i+1}</h4>", visible=True))
+        # Cập nhật DataFrame cho bước đó
+        outputs.append(gr.DataFrame(df_step, visible=True))
+    
+    # Ẩn các component thừa nếu số bước ít hơn max
+    num_steps = len(trake_steps_data)
+    for i in range(num_steps, len(trake_candidate_tables)):
+        outputs.append(gr.Markdown(visible=False))
+        outputs.append(gr.DataFrame(visible=False))
+
+    return outputs
+    
+def update_current_sequence(current_sequence: pd.DataFrame, step_index: int, all_steps_data: list, evt: gr.SelectData):
+    """
+    Hàm chính xử lý logic "Click-to-Add" cho TRAKE.
+    """
+    if evt.index is None or not all_steps_data or step_index >= len(all_steps_data):
+        return current_sequence, "Lỗi: Dữ liệu không hợp lệ."
+
+    selected_row_index = evt.index[0]
+    df_step = all_steps_data[step_index] # Đây là list của các DataFrame
+    selected_row = df_step.iloc[[selected_row_index]]
+    
+    if current_sequence is None:
+        current_sequence = pd.DataFrame()
+
+    # Thêm cột 'step' để biết frame này thuộc bước nào
+    selected_row['step'] = step_index + 1
+    
+    # Nối vào chuỗi hiện tại và sắp xếp lại theo bước
+    updated_sequence = pd.concat([current_sequence, selected_row]).sort_values(by='step').reset_index(drop=True)
+    
+    # Xác thực chuỗi
+    is_valid, validation_msg = validate_sequence(updated_sequence)
+    
+    return updated_sequence, validation_msg
+
+def validate_sequence(sequence_df: pd.DataFrame):
+    """Kiểm tra xem chuỗi có hợp lệ không (cùng video, timestamp tăng dần)."""
+    if sequence_df.empty or len(sequence_df) <= 1:
+        return True, "✅ Chuỗi hợp lệ (1 bước)."
+
+    # Kiểm tra cùng video
+    if sequence_df['video_id'].nunique() > 1:
+        return False, "❌ Lỗi: Các bước phải cùng một video!"
+
+    # Kiểm tra timestamp tăng dần
+    if not sequence_df['timestamp'].is_monotonic_increasing:
+        return False, "❌ Lỗi: Timestamp phải tăng dần!"
+
+    return True, f"✅ Chuỗi hợp lệ ({len(sequence_df)} bước)."
+
+def clear_current_sequence():
+    """Xóa chuỗi đang xây dựng."""
+    return pd.DataFrame(), "Đã xóa chuỗi hiện tại."
+    
+def add_sequence_to_submission(submission_list: pd.DataFrame, current_sequence: pd.DataFrame):
+    """Thêm chuỗi hiện tại (đã được xác thực) vào danh sách nộp bài."""
+    is_valid, msg = validate_sequence(current_sequence)
+    if not is_valid:
+        gr.Warning(f"Không thể thêm chuỗi không hợp lệ! {msg}")
+        return submission_list
+    if current_sequence.empty:
+        gr.Warning("Chuỗi đang xây dựng rỗng!")
+        return submission_list
+
+    # Định dạng lại chuỗi thành một hàng duy nhất để nộp bài
+    submission_row = { 'task_type': ['TRAKE'], 'final_score': [current_sequence['final_score'].mean()] }
+    submission_row['video_id'] = [current_sequence['video_id'].iloc[0]]
+    for i, row in current_sequence.iterrows():
+        submission_row[f'frame_moment_{i+1}'] = [row['keyframe_id']]
+    
+    submission_df_row = pd.DataFrame(submission_row)
+
+    if submission_list is None:
+        submission_list = pd.DataFrame()
+        
+    updated_list = pd.concat([submission_list, submission_df_row]).reset_index(drop=True)
+    gr.Info(f"Đã thêm chuỗi video {submission_row['video_id'][0]} vào danh sách nộp bài!")
+    
+    return updated_list
+
 # ==============================================================================
 # === BẮT ĐẦU PHẦN GIAO DIỆN GRADIO - PHIÊN BẢN NÂNG CẤP GĐ2 ===
 # ==============================================================================
@@ -179,10 +284,9 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
     
     # --- Khai báo các State ---
     full_response_state = gr.State()
-    # **QUAN TRỌNG**: State cho DataFrame gốc, không bị thay đổi bởi lọc/sắp xếp
     kis_qna_df_state = gr.State()
-    trake_steps_state = gr.State()
-    # **STATE MỚI**: State cho danh sách nộp bài
+    trake_steps_state = gr.State([])
+    current_trake_sequence_state = gr.State(pd.DataFrame())
     submission_list_state = gr.State(pd.DataFrame())
 
     gr.HTML("<h1>🚀 AIC25 Battle Station v2 - Tối ưu Hiệu suất</h1>")
@@ -219,8 +323,34 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
                     )
 
                 with gr.TabItem("Bàn Lắp ráp Chuỗi TRAKE"):
-                    # ... (giữ nguyên từ GĐ1)
-                    trake_workspace_placeholder = gr.HTML("Khu vực này sẽ hiển thị các cột ứng viên cho từng bước TRAKE.")
+                    status_trake = gr.Markdown("Chưa có dữ liệu. Hãy thực hiện một truy vấn TRAKE.")
+                    with gr.Row():
+                        # **KHU VỰC LẮP RÁP MỚI**
+                        with gr.Column(scale=3):
+                             gr.Markdown("#### Chuỗi đang xây dựng")
+                             current_sequence_table = gr.DataFrame(label="Click vào ứng viên bên phải để thêm vào đây", headers=['step', 'video_id', 'timestamp', 'final_score'])
+                             validation_status = gr.Markdown("...")
+                             with gr.Row():
+                                 add_seq_to_submission_button = gr.Button("➕ Thêm chuỗi này", variant="primary")
+                                 clear_seq_button = gr.Button("🗑️ Xóa chuỗi")
+                        
+                        # **CÁC CỘT ỨNG VIÊN ĐỘNG**
+                        with gr.Column(scale=2):
+                            gr.Markdown("#### Ứng viên (Click để thêm)")
+                            # Tạo sẵn các component, ban đầu sẽ bị ẩn
+                            trake_candidate_headers = []
+                            trake_candidate_tables = []
+                            MAX_STEPS = 6 # Giả sử truy vấn TRAKE có tối đa 6 bước
+                            for i in range(MAX_STEPS):
+                                header = gr.Markdown(f"<h4>Bước {i+1}</h4>", visible=False)
+                                table = gr.DataFrame(
+                                    headers=['keyframe_id', 'timestamp', 'final_score'],
+                                    row_count=(5, "dynamic"),
+                                    interactive=True,
+                                    visible=False
+                                )
+                                trake_candidate_headers.append(header)
+                                trake_candidate_tables.append(table)
 
         # --- KHU VỰC 2 & 3: XẾP HẠNG & CHI TIẾT (CỘT PHẢI) ---
         with gr.Column(scale=1):
@@ -253,12 +383,15 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
         inputs=[query_input],
         outputs=[
             analysis_summary_output, full_response_state,
-            kis_qna_table, # Cập nhật bảng hiển thị
-            trake_steps_state, status_kis_qna,
-            kis_qna_df_state # **QUAN TRỌNG**: Lưu DataFrame gốc vào State
+            kis_qna_table, trake_steps_state, status_kis_qna,
+            kis_qna_df_state
         ]
+    ).then(
+        fn=build_trake_workspace,
+        inputs=[trake_steps_state],
+        outputs=trake_candidate_headers + trake_candidate_tables # Truyền list component vào outputs
     )
-
+    
     # 2. Sự kiện Chọn một hàng trong bảng KIS/Q&A
     kis_qna_table.select(
         fn=on_kis_qna_select,
@@ -287,6 +420,24 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
             submission_list_table, # Cập nhật bảng danh sách nộp bài
             kis_qna_table          # Truyền `None` vào đây để xóa lựa chọn
         ]
+    )
+    for i, table in enumerate(trake_candidate_tables):
+        table.select(
+            fn=update_current_sequence,
+            inputs=[current_trake_sequence_state, gr.State(i), trake_steps_state],
+            outputs=[current_sequence_table, validation_status]
+        )
+    clear_seq_button.click(
+        fn=clear_current_sequence,
+        outputs=[current_sequence_table, validation_status]
+    )
+    add_seq_to_submission_button.click(
+        fn=add_sequence_to_submission,
+        inputs=[submission_list_state, current_sequence_table],
+        outputs=[submission_list_table] # Sẽ được cập nhật ở GĐ4
+    ).then(
+        fn=clear_current_sequence, # Tự động xóa chuỗi sau khi thêm thành công
+        outputs=[current_sequence_table, validation_status]
     )
 
 if __name__ == "__main__":

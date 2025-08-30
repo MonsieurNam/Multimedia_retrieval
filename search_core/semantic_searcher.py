@@ -112,16 +112,31 @@ class SemanticSearcher:
             # Tính Semantic Score
             semantic_score = (semantic_scores_tensor[i].item() + 1) / 2
             
+            original_clip_score = cand['clip_score'] # Nằm trong khoảng [-1, 1]
+            # Chuẩn hóa điểm CLIP về [0, 1] để cộng hưởng tốt hơn
+            normalized_clip_score = (original_clip_score + 1) / 2
+            
             # Tính Final Score
-            w_clip = precomputed_analysis.get('w_clip') if precomputed_analysis else 0.4
-            w_obj = precomputed_analysis.get('w_obj') if precomputed_analysis else 0.3
-            w_semantic = precomputed_analysis.get('w_semantic') if precomputed_analysis else 0.3
-            normalized_clip_score = cand['clip_score']
+            w_clip = precomputed_analysis.get('w_clip', 0.4)
+            w_obj = precomputed_analysis.get('w_obj', 0.3)
+            w_semantic = precomputed_analysis.get('w_semantic', 0.3)
             
             final_score = (w_clip * normalized_clip_score + 
                            w_obj * object_score + 
                            w_semantic * semantic_score)
             
+            # ==============================================================================
+            # === DEBUG LOG: KIỂM TRA ĐIỂM SỐ ===========================================
+            # ==============================================================================
+            if i < 3: # Chỉ in 3 kết quả đầu
+                print(f"--- DEBUG SCORE (cand #{i}) ---")
+                print(f"  - Original CLIP: {original_clip_score:.4f} -> Normalized: {normalized_clip_score:.4f}")
+                print(f"  - Object Score: {object_score:.4f}")
+                print(f"  - Semantic Score: {semantic_score:.4f}")
+                print(f"  - Weights (C,O,S): ({w_clip}, {w_obj}, {w_semantic})")
+                print(f"  - ==> FINAL SCORE: {final_score:.4f}")
+            # ==============================================================================
+
             cand['final_score'] = final_score
             cand['scores'] = {'clip': normalized_clip_score, 'object': object_score, 'semantic': semantic_score}
             reranked_results.append(cand)

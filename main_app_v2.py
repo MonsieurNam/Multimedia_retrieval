@@ -125,6 +125,8 @@ def perform_search(query_text: str):
 
 print("--- Giai đoạn 3/4: Đang xây dựng bố cục giao diện 'Trạm Tác chiến'...")
 
+print("--- Giai đoạn 3/4: Đang xây dựng bố cục giao diện 'Trạm Tác chiến'...")
+
 with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
     
     # --- Khai báo các State để lưu trữ dữ liệu ---
@@ -150,13 +152,22 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
             with gr.Tabs():
                 with gr.TabItem("Xác thực Nhanh KIS/Q&A"):
                     status_kis_qna = gr.Markdown("Chưa có dữ liệu.")
+                    
+                    # =======================================================
+                    # === SỬA LỖI TẠI ĐÂY ===
+                    # Xóa 'max_rows' và thay bằng 'row_count'
+                    # =======================================================
                     kis_qna_table = gr.DataFrame(
                         label="Top 200 Ứng viên (Sắp xếp, Lọc, Chọn ở Giai đoạn 2)",
                         headers=['video_id', 'timestamp', 'final_score', 'clip_score', 'object_score', 'semantic_score'],
                         datatype=['str', 'number', 'number', 'number', 'number', 'number'],
-                        max_rows=10, # Chỉ hiển thị 10 dòng ban đầu để gọn
+                        row_count=(10, "dynamic"), # Hiển thị 10 dòng, cho phép cuộn/phân trang
+                        col_count=(6, "fixed"),    # Số cột là cố định
                         interactive=True # Sẽ dùng ở GĐ2
                     )
+                    # =======================================================
+                    # === KẾT THÚC SỬA LỖI ===
+                    # =======================================================
 
                 with gr.TabItem("Bàn Lắp ráp Chuỗi TRAKE"):
                     status_trake = gr.Markdown("Chưa có dữ liệu.")
@@ -173,7 +184,12 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
                     detailed_info_placeholder = gr.HTML("Thông tin chi tiết sẽ hiện ở đây khi bạn chọn một ứng viên.")
                 
                 with gr.TabItem("Danh sách Nộp bài (Top 100)"):
-                    submission_list_placeholder = gr.DataFrame(label="Danh sách này sẽ được sắp xếp lại bằng tay ở GĐ4")
+                    # Cũng áp dụng sửa lỗi tương tự ở đây
+                    submission_list_placeholder = gr.DataFrame(
+                        label="Danh sách này sẽ được sắp xếp lại bằng tay ở GĐ4",
+                        row_count=(10, "dynamic"),
+                        interactive=True # Để có thể chọn hàng và sắp xếp lại
+                    )
             
             with gr.Group():
                  gr.Markdown("#### Nộp bài")

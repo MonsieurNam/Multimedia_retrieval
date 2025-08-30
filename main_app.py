@@ -793,37 +793,7 @@ app_header_html = """
             </div>
         </div>
     """
-usage_guide_html = """
-        <div style="padding: 20px; background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%); border-radius: 12px; color: white;">
-            <h3 style="margin-top: 0; color: white;">Cách sử dụng hệ thống:</h3>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px;">
-                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;">
-                    <h4 style="margin: 0 0 10px 0; color: white;">🔍 Tìm kiếm</h4>
-                    <ul style="margin: 0; padding-left: 20px;">
-                        <li>Nhập mô tả chi tiết bằng tiếng Việt</li>
-                        <li>Sử dụng từ ngữ cụ thể về đối tượng, hành động, địa điểm</li>
-                        <li>Chọn chế độ Semantic Search để có kết quả tốt nhất</li>
-                    </ul>
-                </div>
-                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;">
-                    <h4 style="margin: 0 0 10px 0; color: white;">🎬 Xem video</h4>
-                    <ul style="margin: 0; padding-left: 20px;">
-                        <li>Click vào bất kỳ ảnh nào trong kết quả</li>
-                        <li>Video clip 10 giây sẽ được tạo tự động</li>
-                        <li>Xem thông tin chi tiết về điểm số và đối tượng</li>
-                    </ul>
-                </div>
-                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;">
-                    <h4 style="margin: 0 0 10px 0; color: white;">⚙️ Tùy chỉnh</h4>
-                    <ul style="margin: 0; padding-left: 20px;">
-                        <li>Điều chỉnh số lượng kết quả (6-24)</li>
-                        <li>So sánh giữa Basic CLIP và Semantic Search</li>
-                        <li>Xem phân tích AI từ Gemini</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-        """
+
 app_footer_html = """
     <div style="text-align: center; margin-top: 40px; padding: 20px; background: linear-gradient(135deg, #636e72 0%, #2d3436 100%); border-radius: 12px; color: white;">
         <p style="margin: 0; opacity: 0.8;">
@@ -945,23 +915,6 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                 allow_preview=False
             )
 
-            # --- 5. Khu vực Thu thập & Tải về ---
-            gr.Markdown("### 3. Thu thập & Tải về")
-            selected_count_md = gr.Markdown("Đã chọn: 0")
-            selected_preview = gr.Gallery(
-                label="Ảnh đã chọn (Click để bỏ chọn)",
-                show_label=True,
-                columns=8,
-                rows=2,
-                height=220,
-                object_fit="cover"
-            )
-            with gr.Row():
-                btn_select_all = gr.Button("Chọn tất cả")
-                btn_clear_sel = gr.Button("Bỏ chọn tất cả")
-                btn_download = gr.Button("Tải ZIP các ảnh đã chọn", variant="primary")
-            zip_file_out = gr.File(label="Tải tệp ZIP của bạn tại đây")
-
         # --- CỘT PHẢI (1/3 không gian): XEM CHI TIẾT & NỘP BÀI ---
         with gr.Column(scale=1):
             
@@ -1003,7 +956,6 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                     submission_button = gr.Button("💾 Tạo File CSV")
                     submission_file_output = gr.File(label="Tải file nộp bài tại đây")
 
-    gr.HTML(usage_guide_html)
     gr.HTML(app_footer_html)
     
     search_inputs = [
@@ -1013,7 +965,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     ]
     search_outputs = [
         results_gallery, status_output, response_state, gemini_analysis, stats_info,
-        gallery_items_state, selected_indices_state, selected_count_md, selected_preview,  current_page_state, page_info_display 
+        gallery_items_state, selected_indices_state, current_page_state, page_info_display 
     ]
     search_button.click(fn=perform_search, inputs=search_inputs, outputs=search_outputs)
     query_input.submit(fn=perform_search, inputs=search_inputs, outputs=search_outputs)
@@ -1046,28 +998,6 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
         outputs=analysis_outputs
     )
 
-    # 3. Sự kiện cho các nút Chọn/Bỏ chọn/Tải về
-    btn_select_all.click(
-        fn=select_all_items,
-        inputs=[gallery_items_state],
-        outputs=[selected_indices_state, selected_count_md, selected_preview]
-    )
-    btn_clear_sel.click(
-        fn=clear_selection,
-        inputs=[],
-        outputs=[selected_indices_state, selected_count_md, selected_preview]
-    )
-    selected_preview.select(
-        fn=deselect_from_selected_preview,
-        inputs=[gallery_items_state, selected_indices_state],
-        outputs=[selected_indices_state, selected_count_md, selected_preview]
-    )
-    btn_download.click(
-        fn=download_selected_zip,
-        inputs=[gallery_items_state, selected_indices_state],
-        outputs=[zip_file_out]
-    )
-
     # 4. Sự kiện Nộp bài
     add_top_button.click(
         fn=add_to_submission_list,
@@ -1097,7 +1027,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     clear_outputs = [
         results_gallery, status_output, response_state, gemini_analysis, stats_info,
         video_player, detailed_info, clip_info, query_id_input, submission_file_output,
-        selected_count_md, selected_indices_state, gallery_items_state, zip_file_out, selected_preview
+        selected_indices_state, gallery_items_state
     ]
     clear_button.click(fn=clear_all, inputs=None, outputs=clear_outputs)
 

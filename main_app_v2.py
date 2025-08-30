@@ -74,68 +74,111 @@ class MockMasterSearcher:
 
 mock_master_searcher = MockMasterSearcher()
 
-# ==============================================================================
-# === BẮT ĐẦU PHẦN CODE GIAO DIỆN GRADIO ===
-# ==============================================================================
-print("--- Giai đoạn 2/4: Đang định nghĩa các hàm logic cho giao diện...")
-
 def perform_search(query_text: str):
-    """
-    Hàm xử lý sự kiện chính: gọi backend và đổ dữ liệu vào các State.
-    """
-    print(f"--- UI: Bắt đầu tìm kiếm cho '{query_text}' ---")
-    
-    # 1. Gọi backend (phiên bản mock)
+    # (Hàm này giữ nguyên logic từ GĐ1)
     response = mock_master_searcher.search(query_text)
-    
-    # 2. Lấy dữ liệu từ response
     task_type = response['task_type']
     query_analysis = response['query_analysis']
     kis_qna_candidates = response['kis_qna_candidates']
     trake_step_candidates = response['trake_step_candidates']
-    
-    # 3. Chuẩn bị đầu ra để cập nhật UI
-    # Tạo chuỗi tóm tắt phân tích
-    analysis_summary = (
-        f"<b>Loại nhiệm vụ:</b> {task_type.value}<br>"
-        f"<b>Bối cảnh tìm kiếm:</b> {query_analysis.get('search_context', 'N/A')}<br>"
-        f"<b>Thực thể:</b> {query_analysis.get('objects_en', [])}"
-    )
-    
-    # Cập nhật các component tương ứng với loại nhiệm vụ
+    analysis_summary = (f"<b>Loại nhiệm vụ:</b> {task_type.value}<br>"
+                      f"<b>Bối cảnh tìm kiếm:</b> {query_analysis.get('search_context', 'N/A')}")
     if task_type == MockTaskType.TRAKE:
-        # Nếu là TRAKE, cập nhật không gian làm việc TRAKE và xóa KIS/Q&A
-        return (
-            analysis_summary,
-            response,
-            pd.DataFrame(), # Xóa bảng KIS/Q&A
-            trake_step_candidates,
-            f"Đã tìm thấy ứng viên cho {len(trake_step_candidates)} bước TRAKE"
-        )
-    else: # KIS hoặc QNA
-        # Cập nhật bảng KIS/Q&A và xóa TRAKE
-        return (
-            analysis_summary,
-            response,
-            kis_qna_candidates,
-            [], # Xóa dữ liệu các bước TRAKE
-            f"Đã tìm thấy {len(kis_qna_candidates)} ứng viên KIS/QNA"
-        )
+        return (analysis_summary, response, pd.DataFrame(), trake_step_candidates,
+                f"Đã tìm thấy ứng viên cho {len(trake_step_candidates)} bước TRAKE")
+    else:
+        # TRẢ VỀ THÊM DataFrame để cập nhật State
+        return (analysis_summary, response, kis_qna_candidates, [],
+                f"Đã tìm thấy {len(kis_qna_candidates)} ứng viên KIS/QNA", kis_qna_candidates)
 
+def on_kis_qna_select(kis_qna_df: pd.DataFrame, evt: gr.SelectData):
+    """
+    Hàm xử lý khi người dùng chọn một hàng trong bảng KIS/Q&A.
+    """
+    if evt.index is None or kis_qna_df.empty:
+        return None, "Vui lòng chọn một hàng để xem chi tiết."
 
-print("--- Giai đoạn 3/4: Đang xây dựng bố cục giao diện 'Trạm Tác chiến'...")
+    # Lấy thông tin của hàng được chọn
+    selected_row_index = evt.index[0] # evt.index là một tuple (row_index, col_index)
+    selected_row = kis_qna_df.iloc[selected_row_index]
+    
+    # Tạo video clip (sử dụng mock)
+    video_clip = create_mock_video_segment(selected_row['video_path'], selected_row['timestamp'])
+    
+    # Tạo HTML hiển thị thông tin chi tiết
+    detailed_info_html = f"""
+    <h4>Thông tin Chi tiết</h4>
+    <ul>
+        <li><b>Video ID:</b> {selected_row['video_id']}</li>
+        <li><b>Keyframe ID:</b> {selected_row['keyframe_id']}</li>
+        <li><b>Timestamp:</b> {selected_row['timestamp']:.2f}s</li>
+        <li><b>Final Score:</b> {selected_row['final_score']:.4f}</li>
+        <hr>
+        <li><b>Clip Score:</b> {selected_row['clip_score']:.4f}</li>
+        <li><b>Object Score:</b> {selected_row['object_score']:.4f}</li>
+        <li><b>Semantic Score:</b> {selected_row['semantic_score']:.4f}</li>
+        <hr>
+        <li><b>Câu trả lời (VQA):</b> {selected_row['answer']}</li>
+    </ul>
+    """
+    
+    return video_clip, detailed_info_html
 
-print("--- Giai đoạn 3/4: Đang xây dựng bố cục giao diện 'Trạm Tác chiến'...")
+def update_kis_qna_view(kis_qna_df: pd.DataFrame, sort_by: str, filter_video: str):
+    """
+    Hàm để lọc và sắp xếp lại bảng KIS/Q&A.
+    """
+    if kis_qna_df is None or kis_qna_df.empty:
+        return pd.DataFrame() # Trả về DF rỗng nếu không có dữ liệu
+
+    # Sao chép để không thay đổi state gốc
+    df_processed = kis_qna_df.copy()
+    
+    # Lọc theo video ID
+    if filter_video and filter_video.strip():
+        df_processed = df_processed[df_processed['video_id'].str.contains(filter_video.strip(), case=False)]
+        
+    # Sắp xếp
+    if sort_by and sort_by in df_processed.columns:
+        # Giả sử điểm cao hơn là tốt hơn
+        is_ascending = not ('score' in sort_by)
+        df_processed = df_processed.sort_values(by=sort_by, ascending=is_ascending)
+        
+    return df_processed
+
+def add_to_submission_list(submission_list: pd.DataFrame, kis_qna_df: pd.DataFrame, evt: gr.SelectData):
+    """
+    Thêm hàng đang được chọn vào danh sách nộp bài.
+    """
+    if evt.index is None or kis_qna_df.empty:
+        gr.Warning("Chưa có ứng viên nào được chọn!")
+        return submission_list
+
+    selected_row_index = evt.index[0]
+    selected_row = kis_qna_df.iloc[[selected_row_index]] # Lấy dưới dạng DataFrame
+    
+    if submission_list is None:
+        submission_list = pd.DataFrame()
+
+    # Thêm hàng mới vào cuối danh sách
+    updated_list = pd.concat([submission_list, selected_row]).reset_index(drop=True)
+    gr.Info(f"Đã thêm {selected_row['keyframe_id'].iloc[0]} vào danh sách nộp bài!")
+    
+    return updated_list
+
+# ==============================================================================
+# === BẮT ĐẦU PHẦN GIAO DIỆN GRADIO - PHIÊN BẢN NÂNG CẤP GĐ2 ===
+# ==============================================================================
 
 with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
     
-    # --- Khai báo các State để lưu trữ dữ liệu ---
-    # State chứa toàn bộ response thô từ backend
+    # --- Khai báo các State ---
     full_response_state = gr.State()
-    # State cho bảng dữ liệu KIS/Q&A (dạng DataFrame)
+    # **QUAN TRỌNG**: State cho DataFrame gốc, không bị thay đổi bởi lọc/sắp xếp
     kis_qna_df_state = gr.State()
-    # State cho dữ liệu các bước TRAKE (dạng list của list)
     trake_steps_state = gr.State()
+    # **STATE MỚI**: State cho danh sách nộp bài
+    submission_list_state = gr.State(pd.DataFrame())
 
     gr.HTML("<h1>🚀 AIC25 Battle Station v2 - Tối ưu Hiệu suất</h1>")
 
@@ -152,43 +195,42 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
             with gr.Tabs():
                 with gr.TabItem("Xác thực Nhanh KIS/Q&A"):
                     status_kis_qna = gr.Markdown("Chưa có dữ liệu.")
+                    # **CÁC WIDGET LỌC/SẮP XẾP MỚI**
+                    with gr.Row():
+                        sort_dropdown = gr.Dropdown(
+                            label="Sắp xếp theo",
+                            choices=['final_score', 'clip_score', 'object_score', 'semantic_score', 'timestamp'],
+                            value='final_score'
+                        )
+                        filter_textbox = gr.Textbox(label="Lọc theo Video ID")
                     
-                    # =======================================================
-                    # === SỬA LỖI TẠI ĐÂY ===
-                    # Xóa 'max_rows' và thay bằng 'row_count'
-                    # =======================================================
                     kis_qna_table = gr.DataFrame(
-                        label="Top 200 Ứng viên (Sắp xếp, Lọc, Chọn ở Giai đoạn 2)",
+                        label="Top 200 Ứng viên (Click vào hàng để xem chi tiết)",
                         headers=['video_id', 'timestamp', 'final_score', 'clip_score', 'object_score', 'semantic_score'],
                         datatype=['str', 'number', 'number', 'number', 'number', 'number'],
-                        row_count=(10, "dynamic"), # Hiển thị 10 dòng, cho phép cuộn/phân trang
-                        col_count=(6, "fixed"),    # Số cột là cố định
-                        interactive=True # Sẽ dùng ở GĐ2
+                        row_count=(10, "dynamic"),
+                        col_count=(6, "fixed"),
+                        interactive=True
                     )
-                    # =======================================================
-                    # === KẾT THÚC SỬA LỖI ===
-                    # =======================================================
 
                 with gr.TabItem("Bàn Lắp ráp Chuỗi TRAKE"):
-                    status_trake = gr.Markdown("Chưa có dữ liệu.")
-                    # Ở GĐ1, chúng ta chỉ cần một placeholder. GĐ3 sẽ xây dựng chi tiết.
+                    # ... (giữ nguyên từ GĐ1)
                     trake_workspace_placeholder = gr.HTML("Khu vực này sẽ hiển thị các cột ứng viên cho từng bước TRAKE.")
-
 
         # --- KHU VỰC 2 & 3: XẾP HẠNG & CHI TIẾT (CỘT PHẢI) ---
         with gr.Column(scale=1):
             gr.Markdown("### 3. Bảng Xếp hạng & Xem chi tiết")
             with gr.Tabs():
                 with gr.TabItem("Xem chi tiết"):
-                    video_player_placeholder = gr.Video(label="Video Clip Preview")
-                    detailed_info_placeholder = gr.HTML("Thông tin chi tiết sẽ hiện ở đây khi bạn chọn một ứng viên.")
+                    # **NÚT THÊM VÀO DANH SÁCH MỚI**
+                    add_to_submission_button = gr.Button("➕ Thêm ứng viên này vào Danh sách Nộp bài")
+                    video_player = gr.Video(label="Video Clip Preview")
+                    detailed_info = gr.HTML("Thông tin chi tiết sẽ hiện ở đây khi bạn chọn một ứng viên.")
                 
                 with gr.TabItem("Danh sách Nộp bài (Top 100)"):
-                    # Cũng áp dụng sửa lỗi tương tự ở đây
-                    submission_list_placeholder = gr.DataFrame(
+                    submission_list_table = gr.DataFrame(
                         label="Danh sách này sẽ được sắp xếp lại bằng tay ở GĐ4",
-                        row_count=(10, "dynamic"),
-                        interactive=True # Để có thể chọn hàng và sắp xếp lại
+                        interactive=True
                     )
             
             with gr.Group():
@@ -196,24 +238,48 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
                  query_id_input = gr.Textbox(label="Query ID", placeholder="query_01")
                  submission_button = gr.Button("Tạo File Nộp bài")
 
-
     # ==============================================================================
-    # === ĐỊNH NGHĨA CÁC SỰ KIỆN TƯƠNG TÁC ===
+    # === KẾT NỐI CÁC SỰ KIỆN TƯƠNG TÁC - PHIÊN BẢN GĐ2 ===
     # ==============================================================================
-    print("--- Giai đoạn 4/4: Đang kết nối các sự kiện tương tác...")
-
+    
+    # 1. Sự kiện Tìm kiếm chính (Cập nhật để điền vào state DataFrame gốc)
     search_button.click(
         fn=perform_search,
         inputs=[query_input],
         outputs=[
-            analysis_summary_output,
-            full_response_state,
-            kis_qna_table, # Cập nhật trực tiếp bảng KIS/Q&A
-            trake_steps_state, # Cập nhật state TRAKE
-            status_kis_qna # Dùng chung status cho cả 2 để đơn giản
+            analysis_summary_output, full_response_state,
+            kis_qna_table, # Cập nhật bảng hiển thị
+            trake_steps_state, status_kis_qna,
+            kis_qna_df_state # **QUAN TRỌNG**: Lưu DataFrame gốc vào State
         ]
     )
 
+    # 2. Sự kiện Chọn một hàng trong bảng KIS/Q&A
+    kis_qna_table.select(
+        fn=on_kis_qna_select,
+        inputs=[kis_qna_table], # Lấy dữ liệu từ bảng đang hiển thị
+        outputs=[video_player, detailed_info]
+    )
+
+    # 3. Sự kiện thay đổi các widget lọc hoặc sắp xếp
+    sort_dropdown.change(
+        fn=update_kis_qna_view,
+        inputs=[kis_qna_df_state, sort_dropdown, filter_textbox], # Dùng state gốc để tính toán
+        outputs=[kis_qna_table] # Chỉ cập nhật bảng hiển thị
+    )
+    filter_textbox.submit(
+        fn=update_kis_qna_view,
+        inputs=[kis_qna_df_state, sort_dropdown, filter_textbox],
+        outputs=[kis_qna_table]
+    )
+
+    # 4. Sự kiện bấm nút "Thêm vào Danh sách Nộp bài"
+    add_to_submission_button.click(
+        fn=add_to_submission_list,
+        inputs=[submission_list_state, kis_qna_table], # Truyền vào list hiện tại và bảng đang hiển thị
+        outputs=[submission_list_table] # Cập nhật bảng danh sách nộp bài
+    # `_js` và `evt: gr.SelectData` được Gradio xử lý tự động
+    ).then(None, _js="(evt_data) => { return null }", inputs=None, outputs=[kis_qna_table])
+
 if __name__ == "__main__":
-    print("\n--- ✅ Khởi tạo hoàn tất. Đang launch Gradio App Server... ---")
     app.launch(debug=True, share=True)

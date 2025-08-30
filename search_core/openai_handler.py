@@ -6,7 +6,8 @@ import json
 import re
 import base64
 from typing import Dict, Any, List, Optional
-
+import io
+from PIL import Image
 from utils import api_retrier
 
 class OpenAIHandler:

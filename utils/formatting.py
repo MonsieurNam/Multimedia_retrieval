@@ -38,14 +38,26 @@ def format_results_for_gallery(response: Dict[str, Any]) -> List[str]:
 def format_results_for_mute_gallery(response: Dict[str, Any]) -> List[str]:
     """
     Định dạng kết quả thô CHỈ LẤY ĐƯỜNG DẪN ẢNH cho "Lưới ảnh câm" (Cockpit v3.3).
-    
-    Args:
-        response (Dict[str, Any]): Dictionary kết quả trả về từ MasterSearcher.search().
-
-    Returns:
-        List[str]: Một danh sách CHỈ chứa các đường dẫn file ảnh.
     """
+    # ==============================================================================
+    # === DEBUG LOG: KIỂM TRA INPUT ==============================================
+    # ==============================================================================
+    print("\n" + "="*20 + " DEBUG LOG: format_results_for_mute_gallery " + "="*20)
+    print(f"-> Nhận được response với các key: {response.keys() if isinstance(response, dict) else 'Không phải dict'}")
     results = response.get("results", [])
+    task_type = response.get("task_type")
+    print(f"-> Task Type: {task_type}")
+    print(f"-> Số lượng 'results' nhận được: {len(results)}")
+    if results:
+        print(f"-> Cấu trúc của result đầu tiên: {results[0].keys() if isinstance(results[0], dict) else 'Không phải dict'}")
+        # Kiểm tra sự tồn tại của key 'keyframe_path'
+        if 'keyframe_path' in results[0]:
+             print(f"  -> Key 'keyframe_path' tồn tại. Giá trị: {results[0]['keyframe_path']}")
+        else:
+             print("  -> 🚨 CẢNH BÁO: Key 'keyframe_path' KHÔNG TỒN TẠI trong result đầu tiên!")
+    print("="*75 + "\n")
+    # ==============================================================================
+
     if not results:
         return []
         

@@ -243,6 +243,19 @@ def perform_search(
         </div>
     </div>
     """
+    # ==============================================================================
+    # === BƯỚC 5: DEBUG LOG CUỐI CÙNG TRƯỚC KHI RETURN ==========================
+    # ==============================================================================
+    print("\n" + "="*20 + " DEBUG LOG: FINAL RETURN VALUES " + "="*20)
+    print(f"-> gallery_paths (số lượng): {len(gallery_paths)}")
+    if gallery_paths:
+        print(f"  -> Ví dụ gallery_path đầu tiên: {gallery_paths[0]}")
+    print(f"-> status_msg (kiểu): {type(status_msg)}")
+    print(f"  -> Nội dung status_msg: {status_msg[:200]}") # In 200 ký tự đầu
+    print(f"-> response_state có tồn tại không? {'Có' if response_state is not None else 'Không'}")
+    if response_state:
+        print(f"  -> response_state['results'] (số lượng): {len(response_state.get('results', []))}")
+    print("="*66 + "\n")
     
     # Trả về một tuple chứa đúng 9 giá trị
     return (

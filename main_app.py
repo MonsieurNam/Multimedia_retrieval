@@ -651,17 +651,6 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                             label="Số chuỗi kết quả tối đa (TRAKE)",
                             info="Số lượng chuỗi tối đa sẽ được trả về."
                         )
-                    with gr.TabItem("Track-VQA"):
-                        track_vqa_retrieval_slider = gr.Slider(
-                            minimum=100, maximum=500, value=300, step=25,
-                            label="Số ứng viên Track-VQA ban đầu (Retrieval)",
-                            info="Lấy bao nhiêu ứng viên từ FAISS để tìm tất cả các bối cảnh."
-                        )
-                        track_vqa_candidates_slider = gr.Slider(
-                            minimum=1, maximum=100, value=20, step=5,
-                            label="Số ứng viên Track-VQA được phân tích",
-                            info="Số lượng ứng viên tốt nhất sẽ được đưa vào pipeline VQA lặp lại."
-                        )
                     with gr.TabItem("⚖️ Trọng số Rerank"):
                         gr.Markdown("Điều chỉnh tầm quan trọng của các yếu tố khi tính điểm cuối cùng.")
                         w_clip_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.4, step=0.05, label="w_clip (Thị giác Tổng thể)")
@@ -724,7 +713,6 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     search_inputs = [
         query_input, num_results, kis_retrieval_slider, vqa_candidates_slider,
         vqa_retrieval_slider, trake_candidates_per_step_slider, trake_max_sequences_slider,
-        track_vqa_retrieval_slider, track_vqa_candidates_slider,
         w_clip_slider, w_obj_slider, w_semantic_slider
     ]
     search_outputs = [

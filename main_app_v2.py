@@ -28,7 +28,7 @@ def create_mock_kis_qna_df(num_rows=200):
         'semantic_score': np.random.uniform(0.2, 0.8, num_rows).round(4),
         'final_score': np.random.uniform(0.5, 0.85, num_rows).round(4),
         'answer': [f'Câu trả lời mẫu {i}' for i in range(num_rows)],
-        'video_path': '/kaggle/input/aic2025-batch-1-video/L01_V001.mp4'
+        'video_path': '/kaggle/input/aic2025-batch-1-video/L21_V001.mp4'
     }
     df = pd.DataFrame(data)
     return df.sort_values(by='final_score', ascending=False).reset_index(drop=True)
@@ -39,11 +39,11 @@ def create_mock_trake_steps(num_steps=4, num_candidates_per_step=10):
     base_timestamp = 100
     for step in range(num_steps):
         data = {
-            'keyframe_id': [f'L01_V001_{step}_{i:03d}' for i in range(num_candidates_per_step)],
-            'video_id': ['L01_V001'] * num_candidates_per_step,
+            'keyframe_id': [f'L21_V001_{step}_{i:03d}' for i in range(num_candidates_per_step)],
+            'video_id': ['L21_V001'] * num_candidates_per_step,
             'timestamp': np.round(np.sort(np.random.uniform(base_timestamp, base_timestamp + 50, num_candidates_per_step)), 2),
             'final_score': np.round(np.random.uniform(0.6, 0.9, num_candidates_per_step), 4),
-            'video_path': ['/kaggle/input//kaggle/input/aic2025-batch-1-video/L01_V001.mp4'] * num_candidates_per_step
+            'video_path': ['/kaggle/input//kaggle/input/aic2025-batch-1-video/L21_V001.mp4'] * num_candidates_per_step
         }
         all_steps_dfs.append(pd.DataFrame(data))
         base_timestamp += 100 # Đảm bảo các bước sau có timestamp lớn hơn
@@ -76,7 +76,7 @@ mock_master_searcher = MockMasterSearcher()
 # Mock hàm tạo video clip
 def create_mock_video_segment(video_path, timestamp):
     print(f"--- MOCK VIDEO: Giả lập cắt video '{video_path}' tại {timestamp}s ---")
-    return '/kaggle/input//kaggle/input/aic2025-batch-1-video/L01_V001.mp4'
+    return '/kaggle/input//kaggle/input/aic2025-batch-1-video/L21_V001.mp4'
 
 
 # ==============================================================================

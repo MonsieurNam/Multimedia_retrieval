@@ -8,7 +8,6 @@ from google.api_core import exceptions as google_exceptions
 from search_core.basic_searcher import BasicSearcher
 from search_core.semantic_searcher import SemanticSearcher
 from search_core.trake_solver import TRAKESolver
-from search_core.track_vqa_solver import TrackVQASolver
 from search_core.gemini_text_handler import GeminiTextHandler
 from search_core.openai_handler import OpenAIHandler
 from search_core.task_analyzer import TaskType
@@ -40,7 +39,6 @@ class MasterSearcher:
         self.gemini_handler: Optional[GeminiTextHandler] = None
         self.openai_handler: Optional[OpenAIHandler] = None
         self.trake_solver: Optional[TRAKESolver] = None
-        self.track_vqa_solver: Optional[TrackVQASolver] = None
         self.ai_enabled = False
         self.known_entities: set = set()
         
@@ -79,14 +77,7 @@ class MasterSearcher:
         if self.gemini_handler:
             # TRAKE Solver chỉ cần text handler để phân rã truy vấn
             self.trake_solver = TRAKESolver(ai_handler=self.gemini_handler)
-        
-        if self.gemini_handler and self.openai_handler:
-            # TrackVQASolver cần cả hai: text để phân tích, vision để hỏi đáp
-            self.track_vqa_solver = TrackVQASolver(
-                text_handler=self.gemini_handler, 
-                vision_handler=self.openai_handler,
-                semantic_searcher=self.semantic_searcher
-            )
+    
 
         print(f"--- ✅ Master Searcher đã sẵn sàng! (AI Enabled: {self.ai_enabled}) ---")
 
@@ -146,59 +137,7 @@ class MasterSearcher:
         search_context = query_analysis.get('search_context', query)
 
         # --- Bước 3: Khối Điều phối Logic (Cập nhật để truyền Config) ---
-
-        if task_type == TaskType.TRACK_VQA:
-            if self.track_vqa_solver:
-                track_vqa_result = self.track_vqa_solver.solve(
-                    query_analysis,
-                    candidates_to_retrieve=track_vqa_retrieval,
-                    candidates_to_analyze=track_vqa_candidates_to_analyze
-                )
-                
-                evidence_frames = track_vqa_result.get("evidence_frames", [])
-                for frame in evidence_frames:   
-                    path = frame.get('keyframe_path')
-                    print(f"DEBUG: Checking path '{path}'... Found: {path}") # <-- THÊM DÒNG NÀY
-                # --- LOGIC "LÀM PHẲNG" DỮ LIỆU BẮT ĐẦU TỪ ĐÂY ---
-
-                # 1. Tạo một danh sách các đường dẫn ảnh (chỉ string)
-                evidence_paths = [
-                    frame.get('keyframe_path') 
-                    for frame in evidence_frames 
-                    if frame.get('keyframe_path') and os.path.isfile(frame.get('keyframe_path'))
-                ]
-                
-                # 2. Tạo một danh sách các chú thích (chỉ string)
-                evidence_captions = [
-                    f"{frame.get('video_id', 'N/A')} @{frame.get('timestamp', 0):.1f}s"
-                    for frame in evidence_frames
-                    if frame.get('keyframe_path') and os.path.isfile(frame.get('keyframe_path'))
-                ]
-
-                # 3. Tạo một "kết quả ảo" duy nhất chứa dữ liệu đã được làm phẳng
-                final_results = [{
-                    "is_aggregated_result": True,
-                    "final_answer": track_vqa_result.get("final_answer", "Lỗi tổng hợp kết quả."),
-                    
-                    # Thay thế list of dicts phức tạp bằng các list of strings đơn giản
-                    "evidence_paths": evidence_paths, 
-                    "evidence_captions": evidence_captions,
-                    
-                    # Cung cấp keyframe đầu tiên để gallery có ảnh đại diện.
-                    # Đảm bảo nó là None nếu không có bằng chứng nào hợp lệ.
-                    "keyframe_path": evidence_paths[0] if evidence_paths else None,
-                    
-                    # Cung cấp các thông tin giả để các hàm khác không bị lỗi
-                    "video_id": "Tổng hợp",
-                    "timestamp": 0.0,
-                    "final_score": 1.0, # Điểm cao nhất vì đây là kết quả cuối cùng
-                    "scores": {}
-                }]
-            else:
-                print("--- ⚠️ TrackVQA handler chưa được kích hoạt. Fallback về KIS. ---")
-                task_type = TaskType.KIS
-
-        elif task_type == TaskType.TRAKE:
+        if task_type == TaskType.TRAKE:
             if self.trake_solver:
                 sub_queries = self.trake_solver.decompose_query(query)
                 final_results = self.trake_solver.find_sequences(

@@ -12,7 +12,6 @@ class TaskType(Enum):
     KIS = "Textual KIS"
     QNA = "Question Answering"
     TRAKE = "Action Keyframe Tracking"
-    TRACK_VQA = "Tracking and VQA"
     
 def analyze_query_heuristic(query: str) -> TaskType:
     """

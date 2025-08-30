@@ -21,6 +21,7 @@ from search_core.basic_searcher import BasicSearcher
 from search_core.semantic_searcher import SemanticSearcher
 from search_core.master_searcher import MasterSearcher
 from search_core.task_analyzer import TaskType
+from utils.formatting import format_results_for_mute_gallery
 
 from utils import (
     create_video_segment,
@@ -112,94 +113,124 @@ master_searcher = initialize_backend()
 
 print("--- Giai đoạn 3/4: Đang định nghĩa các hàm logic cho giao diện...")
 
-def perform_search(query_text: str, 
-        num_results: int,
-        kis_retrieval: int,
-        vqa_candidates: int,
-        vqa_retrieval: int,
-        trake_candidates_per_step: int,
-        trake_max_sequences: int,
-        track_vqa_retrieval: int, # <-- Thêm tham số
-        track_vqa_candidates: int,  # <-- Thêm tham số
-        w_clip: float, 
-        w_obj: float, 
-        w_semantic: float
-    ):
+def perform_search(
+    # --- Inputs từ UI ---
+    query_text: str, 
+    num_results: int,
+    kis_retrieval: int,
+    vqa_candidates: int,
+    vqa_retrieval: int,
+    trake_candidates_per_step: int,
+    trake_max_sequences: int,
+    w_clip: float, 
+    w_obj: float, 
+    w_semantic: float,
+    lambda_mmr: float
+    # --- Progress Bar (để cập nhật trạng thái) ---
+    # progress=gr.Progress(track_tqdm=True) # Bỏ comment dòng này nếu bạn muốn thanh progress bar tích hợp
+):
     """
-    Hàm chính xử lý sự kiện tìm kiếm. Gọi MasterSearcher và định dạng kết quả.
+    Hàm chính xử lý sự kiện tìm kiếm, phiên bản hoàn thiện và bền bỉ.
+    Nó điều phối việc gọi backend, xử lý lỗi, định dạng kết quả, và cập nhật toàn bộ UI.
     """
+    
+    # ==============================================================================
+    # === BƯỚC 1: VALIDATE INPUT & HIỂN THỊ TRẠNG THÁI "ĐANG XỬ LÝ" ============
+    # ==============================================================================
+    
+    # Xóa kết quả cũ để chuẩn bị cho lần tìm kiếm mới
+    initial_outputs = {
+        "results_gallery": [],
+        "response_state": None,
+        "status_output": gr.Markdown.update(value=""), # Dùng Markdown để style đẹp hơn
+        "analysis_html": ""
+    }
+
     if not query_text.strip():
         gr.Warning("Vui lòng nhập truy vấn tìm kiếm!")
-        return [], "⚠️ Vui lòng nhập truy vấn và bấm Tìm kiếm.", None, "", ""
-    final_w_clip = w_clip if w_clip is not None else 0.4
-    final_w_obj = w_obj if w_obj is not None else 0.3
-    final_w_semantic = w_semantic if w_semantic is not None else 0.3
+        initial_outputs["status_output"] = gr.Markdown.update(value="<div style='color: orange;'>⚠️ Vui lòng nhập truy vấn và bấm Tìm kiếm.</div>")
+        return list(initial_outputs.values())
+
+    # Thông báo cho người dùng rằng hệ thống đang làm việc
+    status_update = """
+    <div style="display: flex; align-items: center; gap: 15px; padding: 10px; background-color: #e0e7ff; border-radius: 8px;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="animation: spin 1s linear infinite;"><path d="M12 2V6" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 18V22" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.93 4.93L7.76 7.76" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.24 16.24L19.07 19.07" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 12H6" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 12H22" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.93 19.07L7.76 16.24" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.24 7.76L19.07 4.93" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span style="font-weight: 500; color: #4338ca;">Đang xử lý... AI đang phân tích và tìm kiếm. Quá trình này có thể mất một chút thời gian.</span>
+    </div>
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    """
+    # Dùng yield để cập nhật UI ngay lập tức
+    yield gallery_paths, response_state, status_update, analysis_html
     
-    config = {
-        "top_k_final": int(num_results),
-        "kis_retrieval": int(kis_retrieval),
-        "vqa_candidates": int(vqa_candidates),
-        "vqa_retrieval": int(vqa_retrieval),
-        "trake_candidates_per_step": int(trake_candidates_per_step),
-        "trake_max_sequences": int(trake_max_sequences),
-        "track_vqa_retrieval": int(track_vqa_retrieval), 
-        "track_vqa_candidates": int(track_vqa_candidates),
-        "w_clip": final_w_clip,
-        "w_obj": final_w_obj,
-        "w_semantic": final_w_semantic
-    }
+    # ==============================================================================
+    # === BƯỚC 2: GỌI BACKEND & XỬ LÝ LỖI ========================================
+    # ==============================================================================
     
-    start_time = time.time()
-    
-    full_response = master_searcher.search(query=query_text, config=config)
-    print("\n" + "="*20 + " DEBUG LOG: GRADIO RECEIVES RESPONSE " + "="*20)
-    print(f"-> Task Type nhận được: {full_response.get('task_type')}")
-    results_received = full_response.get('results', [])
-    print(f"-> Số lượng kết quả nhận được: {len(results_received)}")
-    if results_received:
-        print(f"-> Cấu trúc kết quả đầu tiên: {list(results_received[0].keys())}")
-    print("="*70 + "\n")
-    search_time = time.time() - start_time
-    
-    formatted_gallery = format_results_for_gallery(full_response)
-    if isinstance(formatted_gallery, list):
-        formatted_gallery = formatted_gallery[:100]
+    try:
+        # Tạo dictionary config để truyền vào backend
+        config = {
+            "top_k_final": int(num_results),
+            "kis_retrieval": int(kis_retrieval),
+            "vqa_candidates": int(vqa_candidates),
+            "vqa_retrieval": int(vqa_retrieval),
+            "trake_candidates_per_step": int(trake_candidates_per_step),
+            "trake_max_sequences": int(trake_max_sequences),
+            "w_clip": w_clip,
+            "w_obj": w_obj,
+            "w_semantic": w_semantic,
+            "lambda_mmr": lambda_mmr
+        }
         
+        start_time = time.time()
+        
+        # Lệnh gọi cốt lõi tới MasterSearcher
+        full_response = master_searcher.search(query=query_text, config=config)
+        
+        search_time = time.time() - start_time
+
+    except Exception as e:
+        print(f"--- ❌ LỖI NGHIÊM TRỌNG TRONG PIPELINE TÌM KIẾM: {e} ---")
+        import traceback
+        traceback.print_exc()
+        error_msg = f"<div style='color: red;'>🔥 Đã xảy ra lỗi nghiêm trọng: {e}</div>"
+        initial_outputs["status_output"] = gr.Markdown.update(value=error_msg)
+        return list(initial_outputs.values())
+
+    # ==============================================================================
+    # === BƯỚC 3: ĐỊNH DẠNG KẾT QUẢ & CẬP NHẬT UI ================================
+    # ==============================================================================
+
+    # Định dạng kết quả cho Lưới ảnh "câm"
+    gallery_paths = format_results_for_mute_gallery(full_response)
+    
+    # Tạo thông báo trạng thái cuối cùng
+    task_type_msg = full_response.get('task_type', TaskType.KIS).value
+    num_found = len(gallery_paths)
+    
+    if num_found == 0:
+        status_msg = f"<div style='color: #d97706;'>😔 **{task_type_msg}** | Không tìm thấy kết quả nào trong {search_time:.2f} giây.</div>"
+    else:
+        status_msg = f"<div style='color: #166534;'>✅ **{task_type_msg}** | Tìm thấy {num_found} kết quả trong {search_time:.2f} giây.</div>"
+
+    # Tạo HTML phân tích truy vấn
     query_analysis = full_response.get('query_analysis', {})
-    gemini_analysis_html = f"""
-    <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); padding: 20px; border-radius: 12px; color: white; margin: 10px 0; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-        <h3 style="margin: 0; color: white; display: flex; align-items: center;">
-            🧠 Phân tích truy vấn AI
-        </h3>
-        <div style="margin-top: 15px;">
-            <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; margin: 8px 0;">
-                <strong>🎯 Đối tượng (VI):</strong> <code style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 4px;">{', '.join(full_response['query_analysis'].get('objects_vi', []))}</code>
-            </div>
-            <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; margin: 8px 0;">
-                <strong>🌍 Đối tượng (EN):</strong> <code style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 4px;">{', '.join(full_response['query_analysis'].get('objects_en', []))}</code>
-            </div>
-            <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; margin: 8px 0;">
-                <strong>📝 Bối cảnh:</strong> <em>"{full_response['query_analysis'].get('search_context', '')}"</em>
-            </div>
+    analysis_html = f"""
+    <div style="background-color: #f3f4f6; border-radius: 8px; padding: 15px;">
+        <h4 style="margin: 0 0 10px 0; color: #111827;">🧠 Phân tích Truy vấn AI</h4>
+        <div style="font-size: 14px; line-height: 1.6;">
+            <strong>Bối cảnh Tìm kiếm:</strong> <em>{query_analysis.get('search_context', 'N/A')}</em><br>
+            <strong>Đối tượng (EN):</strong> <code>{', '.join(query_analysis.get('objects_en', []))}</code><br>
+            <strong>Câu hỏi VQA (nếu có):</strong> <em>{query_analysis.get('specific_question', 'Không có')}</em>
         </div>
     </div>
     """
-        
-    stats_info_html =  f"""
-    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; color: white; margin: 10px 0;">
-        <h3 style="margin: 0; color: white;">🔄 Đang xử lý truy vấn...</h3>
-        <p style="margin: 10px 0 0 0; opacity: 0.9;"> Số kết quả: <strong>{num_results}</strong></p>
-    </div>
-    """
-    cleaned_response_for_state = {"task_type": full_response.get("task_type"), "results": full_response.get("results")}
-    task_type_msg = full_response.get('task_type', TaskType.KIS).value
-    status_msg_html = f"✅ Tìm kiếm hoàn tất trong {search_time:.2f}s. Chế độ: {task_type_msg}"
     
-    return (
-        formatted_gallery, status_msg_html, cleaned_response_for_state, 
-        gemini_analysis_html, stats_info_html, formatted_gallery, 
-        [], "Đã chọn: 0", []
-    )
+    # Trả về kết quả cuối cùng cho các component trên UI
+    # - gallery_paths cho results_gallery
+    # - full_response cho response_state
+    # - status_msg cho status_output
+    # - analysis_html cho analysis_html
+    return gallery_paths, full_response, status_msg, analysis_html
 
 
 def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> str:

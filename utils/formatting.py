@@ -35,6 +35,43 @@ def format_results_for_gallery(response: Dict[str, Any]) -> List[str]:
             
     return gallery_paths
 
+def format_results_for_mute_gallery(response: Dict[str, Any]) -> List[str]:
+    """
+    Định dạng kết quả thô CHỈ LẤY ĐƯỜNG DẪN ẢNH cho "Lưới ảnh câm" (Cockpit v3.3).
+    
+    Args:
+        response (Dict[str, Any]): Dictionary kết quả trả về từ MasterSearcher.search().
+
+    Returns:
+        List[str]: Một danh sách CHỈ chứa các đường dẫn file ảnh.
+    """
+    results = response.get("results", [])
+    if not results:
+        return []
+        
+    task_type = response.get("task_type")
+    
+    keyframe_paths = []
+
+    # Với TRAKE, mỗi kết quả là một chuỗi. Ảnh đại diện là frame ĐẦU TIÊN của chuỗi.
+    if task_type == TaskType.TRAKE:
+        for sequence_result in results:
+            sequence = sequence_result.get('sequence', [])
+            if sequence: # Đảm bảo chuỗi không rỗng
+                first_frame = sequence[0]
+                path = first_frame.get('keyframe_path')
+                if path and os.path.isfile(path):
+                    keyframe_paths.append(path)
+    
+    # Với KIS và QNA, mỗi kết quả là một frame đơn lẻ.
+    else: # Bao gồm KIS, QNA
+        for single_frame_result in results:
+            path = single_frame_result.get('keyframe_path')
+            if path and os.path.isfile(path):
+                keyframe_paths.append(path)
+
+    return keyframe_paths
+
 def format_for_submission(response: Dict[str, Any], max_results: int = 100) -> pd.DataFrame:
     """
     Định dạng kết quả thô thành một DataFrame sẵn sàng để lưu ra file CSV nộp bài.

@@ -101,8 +101,6 @@ class MasterSearcher:
         trake_max_sequences = int(config.get('trake_max_sequences', 50))
 
         # Track-VQA config
-        track_vqa_retrieval = int(config.get('track_vqa_retrieval', 200))
-        track_vqa_candidates_to_analyze = int(config.get('track_vqa_candidates', 20))
         w_clip = config.get('w_clip', 0.4)
         w_obj = config.get('w_obj', 0.3)
         w_semantic = config.get('w_semantic', 0.3)
@@ -151,43 +149,80 @@ class MasterSearcher:
 
         elif task_type == TaskType.QNA:
             if self.openai_handler:
+                # 1. Lấy ra các ứng viên bối cảnh (không đổi)
                 candidates = self.semantic_searcher.search(
                     query_text=search_context,
                     precomputed_analysis=query_analysis,
-                    top_k_final=vqa_candidates_to_rank,
+                    # Lấy ra nhiều ứng viên hơn ở bước này, vì VQA sẽ lọc lại
+                    top_k_final=vqa_retrieval,
                     top_k_retrieval=vqa_retrieval
                 )
-                
-                specific_question = query_analysis.get('specific_question', query)
-                vqa_enhanced_candidates = []
-                print(f"--- 💬 Bắt đầu VQA trên {len(candidates)} ứng viên... ---")
-                
-                for cand in candidates:
-                    # *** NÂNG CẤP TẠI ĐÂY: Lấy transcript từ candidate ***
-                    transcript_context = cand.get('transcript_text', '') 
-                    
-                    # Truyền transcript vào hàm perform_vqa
-                    vqa_result = self.openai_handler.perform_vqa(
-                        image_path=cand['keyframe_path'], 
-                        question=specific_question,
-                        context_text=transcript_context 
-                    )
-                    
-                    new_cand = cand.copy()
-                    new_cand['answer'] = vqa_result['answer']
-                    # Tính điểm kết hợp
-                    search_score = new_cand.get('final_score', 0)
-                    vqa_confidence = vqa_result.get('confidence', 0)
-                    new_cand['final_score'] = search_score * vqa_confidence # Có thể dùng công thức khác
-                    # Lưu lại điểm thành phần để hiển thị
-                    new_cand['scores'] = new_cand.get('scores', {})
-                    new_cand['scores']['search_score'] = search_score
-                    new_cand['scores']['vqa_confidence'] = vqa_confidence
-                    vqa_enhanced_candidates.append(new_cand)
-                
-                final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
 
-        elif not final_results or task_type == TaskType.KIS:
+                if not candidates:
+                    final_results = []
+                else:
+                    # Chọn ra số lượng ứng viên hàng đầu để phân tích VQA
+                    candidates_for_vqa = candidates[:vqa_candidates_to_rank]
+                    
+                    specific_question = query_analysis.get('specific_question', query)
+                    vqa_enhanced_candidates = []
+                    
+                    print(f"--- 💬 Bắt đầu Quét VQA song song trên {len(candidates_for_vqa)} ứng viên... ---")
+
+                    # 2. Sử dụng ThreadPoolExecutor để xử lý song song
+                    with ThreadPoolExecutor(max_workers=8) as executor: # Số worker có thể tinh chỉnh
+                        
+                        # Tạo một future cho mỗi candidate
+                        future_to_candidate = {
+                            executor.submit(
+                                self.openai_handler.perform_vqa, 
+                                image_path=cand['keyframe_path'], 
+                                question=specific_question, 
+                                context_text=cand.get('transcript_text', '')
+                            ): cand 
+                            for cand in candidates_for_vqa
+                        }
+                        
+                        # Thu thập kết quả khi chúng hoàn thành
+                        for future in tqdm(as_completed(future_to_candidate), total=len(candidates_for_vqa), desc="   -> VQA Progress"):
+                            cand = future_to_candidate[future]
+                            try:
+                                vqa_result = future.result()
+                                
+                                new_cand = cand.copy()
+                                new_cand['answer'] = vqa_result['answer']
+                                
+                                # Tính điểm kết hợp
+                                search_score = new_cand.get('final_score', 0)
+                                vqa_confidence = vqa_result.get('confidence', 0)
+                                
+                                # Công thức điểm mới có trọng số để cân bằng
+                                # w_search = 0.6
+                                # w_vqa_conf = 0.4
+                                # new_cand['final_score'] = (w_search * search_score) + (w_vqa_conf * vqa_confidence)
+                                new_cand['final_score'] = search_score * vqa_confidence # Giữ công thức cũ cho đơn giản
+
+                                # Lưu lại điểm thành phần để hiển thị
+                                new_cand['scores'] = new_cand.get('scores', {})
+                                new_cand['scores']['search_score'] = search_score
+                                new_cand['scores']['vqa_confidence'] = vqa_confidence
+                                
+                                vqa_enhanced_candidates.append(new_cand)
+                                
+                            except Exception as exc:
+                                print(f"--- ❌ Lỗi khi xử lý VQA cho keyframe {cand.get('keyframe_id')}: {exc} ---")
+                    
+                    # 3. Sắp xếp lại danh sách cuối cùng dựa trên điểm số đã kết hợp
+                    if vqa_enhanced_candidates:
+                        final_results = sorted(vqa_enhanced_candidates, key=lambda x: x['final_score'], reverse=True)
+                    else:
+                        final_results = []
+            else:
+                print("--- ⚠️ OpenAI (VQA) handler chưa được kích hoạt. Fallback về KIS. ---")
+                task_type = TaskType.KIS
+                final_results = [] # Reset final_results để chạy khối KIS tiếp theo
+
+        if not final_results or task_type == TaskType.KIS:
             final_results = self.semantic_searcher.search(
                 query_text=search_context,
                 precomputed_analysis=query_analysis,

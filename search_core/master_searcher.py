@@ -45,12 +45,12 @@ class MasterSearcher:
         else:
             print("--- ⚠️ Không tìm thấy file CLIP features, MMR sẽ không hoạt động. ---")
 
-        print(f"--- ✅ Master Searcher đã sẵn sàng! (AI Enabled: {self.ai_enabled}) ---")
         self.gemini_handler: Optional[GeminiTextHandler] = None
         self.openai_handler: Optional[OpenAIHandler] = None
         self.trake_solver: Optional[TRAKESolver] = None
         self.ai_enabled = False
         self.known_entities: set = set()
+        print(f"--- ✅ Master Searcher đã sẵn sàng! (AI Enabled: {self.ai_enabled}) ---")
         
         if entities_path and os.path.exists(entities_path):
             try:

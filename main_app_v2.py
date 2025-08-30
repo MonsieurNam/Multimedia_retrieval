@@ -43,7 +43,7 @@ def create_mock_trake_steps(num_steps=4, num_candidates_per_step=10):
             'video_id': ['L01_V001'] * num_candidates_per_step,
             'timestamp': np.round(np.sort(np.random.uniform(base_timestamp, base_timestamp + 50, num_candidates_per_step)), 2),
             'final_score': np.round(np.random.uniform(0.6, 0.9, num_candidates_per_step), 4),
-            'video_path': ['/kaggle/input/aic-2024-public-test-data-2nd/videos/L01_V001.mp4'] * num_candidates_per_step
+            'video_path': ['/kaggle/input//kaggle/input/aic2025-batch-1-video/L01_V001.mp4'] * num_candidates_per_step
         }
         all_steps_dfs.append(pd.DataFrame(data))
         base_timestamp += 100 # Đảm bảo các bước sau có timestamp lớn hơn
@@ -76,7 +76,7 @@ mock_master_searcher = MockMasterSearcher()
 # Mock hàm tạo video clip
 def create_mock_video_segment(video_path, timestamp):
     print(f"--- MOCK VIDEO: Giả lập cắt video '{video_path}' tại {timestamp}s ---")
-    return '/kaggle/input/aic-2024-public-test-data-2nd/videos/L01_V001.mp4'
+    return '/kaggle/input//kaggle/input/aic2025-batch-1-video/L01_V001.mp4'
 
 
 # ==============================================================================
@@ -85,7 +85,7 @@ def create_mock_video_segment(video_path, timestamp):
 
 def handle_search_and_update_workspaces(query_text: str):
     """
-    HÀM CHÍNH MỚI - TỔNG HỢP TẤT CẢ LOGIC CẬP NHẬT UI SAU KHI TÌM KIẾM
+    *** HÀM CHÍNH SỬA LỖI: Trả về giá trị gốc thay vì đối tượng gr.update ***
     """
     print(f"--- UI: Bắt đầu tìm kiếm và cập nhật workspace cho '{query_text}' ---")
     
@@ -107,8 +107,12 @@ def handle_search_and_update_workspaces(query_text: str):
     # Chuẩn bị các giá trị cho workspace TRAKE (mặc định là ẩn)
     MAX_STEPS = 6 # Phải khớp với UI
     trake_workspace_updates = []
-    for _ in range(MAX_STEPS * 2): # Mỗi bước có 1 header và 1 table
-        trake_workspace_updates.append(gr.update(visible=False))
+    # Mỗi bước có 1 header (string, visible) và 1 table (DataFrame, visible)
+    for _ in range(MAX_STEPS):
+        trake_workspace_updates.append("") # value cho Markdown
+        trake_workspace_updates.append(False) # visible cho Markdown
+        trake_workspace_updates.append(pd.DataFrame()) # value cho DataFrame
+        trake_workspace_updates.append(False) # visible cho DataFrame
 
     # 4. Xử lý logic dựa trên loại nhiệm vụ
     if task_type == MockTaskType.TRAKE:
@@ -121,11 +125,18 @@ def handle_search_and_update_workspaces(query_text: str):
         trake_workspace_updates = []
         for i in range(MAX_STEPS):
             if i < num_steps:
-                trake_workspace_updates.append(gr.update(value=f"<h4>Bước {i+1}</h4>", visible=True))
-                trake_workspace_updates.append(gr.update(value=trake_step_candidates[i], visible=True))
+                # Giá trị cho Markdown Header
+                trake_workspace_updates.append(f"<h4>Bước {i+1}</h4>")
+                trake_workspace_updates.append(True)
+                # Giá trị cho DataFrame Table
+                trake_workspace_updates.append(trake_step_candidates[i])
+                trake_workspace_updates.append(True)
             else:
-                trake_workspace_updates.append(gr.update(visible=False))
-                trake_workspace_updates.append(gr.update(visible=False))
+                # Các giá trị để ẩn component
+                trake_workspace_updates.append("")
+                trake_workspace_updates.append(False)
+                trake_workspace_updates.append(pd.DataFrame())
+                trake_workspace_updates.append(False)
                 
     else: # KIS hoặc QNA
         kis_qna_candidates = response['kis_qna_candidates']
@@ -134,15 +145,26 @@ def handle_search_and_update_workspaces(query_text: str):
         status_msg = f"Đã tìm thấy {len(kis_qna_candidates)} ứng viên KIS/QNA."
 
     # 5. Trả về một tuple lớn chứa TẤT CẢ các giá trị cập nhật
-    return (
-        analysis_summary,           # cho analysis_summary_output
-        response,                   # cho full_response_state
-        kis_qna_df_output,          # cho kis_qna_table
-        trake_steps_state_output,   # cho trake_steps_state
-        status_msg,                 # cho status_kis_qna
-        kis_qna_df_state_output,    # cho kis_qna_df_state
-        *trake_workspace_updates    # Giải nén tuple vào các outputs còn lại
-    )
+    # Chúng ta sẽ trả về một gr.update object lớn bao bọc tất cả các giá trị
+    
+    # Tạo một dictionary để map component tới giá trị mới
+    # Đây là cách làm rõ ràng và an toàn nhất
+    
+    output_dict = {
+        analysis_summary_output: analysis_summary,
+        full_response_state: response,
+        kis_qna_table: kis_qna_df_output,
+        trake_steps_state: trake_steps_state_output,
+        status_kis_qna: status_msg,
+        kis_qna_df_state: kis_qna_df_state_output,
+    }
+    
+    # Cập nhật các component TRAKE
+    for i in range(MAX_STEPS):
+        output_dict[trake_candidate_headers[i]] = gr.update(value=trake_workspace_updates[i*4], visible=trake_workspace_updates[i*4+1])
+        output_dict[trake_candidate_tables[i]] = gr.update(value=trake_workspace_updates[i*4+2], visible=trake_workspace_updates[i*4+3])
+
+    return output_dict
 
 def on_kis_qna_select(kis_qna_df: pd.DataFrame, evt: gr.SelectData):
     if evt.index is None or kis_qna_df.empty:
@@ -295,10 +317,14 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
     
     # 1. Sự kiện Tìm kiếm
     all_search_outputs = [
-        analysis_summary_output, full_response_state,
-        kis_qna_table, trake_steps_state, status_kis_qna,
+        analysis_summary_output,
+        full_response_state,
+        kis_qna_table,
+        trake_steps_state,
+        status_kis_qna,
         kis_qna_df_state,
     ] + trake_candidate_headers + trake_candidate_tables
+    
     search_button.click(
         fn=handle_search_and_update_workspaces,
         inputs=[query_input],

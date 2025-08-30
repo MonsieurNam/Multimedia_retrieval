@@ -54,13 +54,39 @@ class OpenAIHandler:
         
         return ""
 
-    def _encode_image_to_base64(self, image_path: str) -> str:
-        # --- KHÔNG THAY ĐỔI ---
+    def _preprocess_and_encode_image(
+        self, 
+        image_path: str, 
+        max_size: int = 1024, 
+        quality: int = 90
+    ) -> str:
+        """
+        Tiền xử lý ảnh (resize, nén) và mã hóa sang Base64.
+        Đây là bước tối quan trọng để đảm bảo độ tin cậy và hiệu suất.
+        """
         try:
-            with open(image_path, "rb") as image_file:
-                return base64.b64encode(image_file.read()).decode('utf-8')
+            with Image.open(image_path) as img:
+                # 1. Chuẩn hóa: Chuyển sang định dạng RGB để loại bỏ các kênh màu phức tạp như RGBA hoặc CMYK.
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                # 2. Resize: Giảm kích thước ảnh xuống một ngưỡng hợp lý trong khi giữ nguyên tỷ lệ.
+                #    GPT-4o xử lý tốt nhất với ảnh ~1024px.
+                img.thumbnail((max_size, max_size))
+
+                # 3. Nén & Lưu vào bộ nhớ đệm (in-memory buffer)
+                #    Không cần lưu ra file tạm, giúp tăng tốc độ.
+                buffer = io.BytesIO()
+                img.save(buffer, format="JPEG", quality=quality)
+                img_bytes = buffer.getvalue()
+
+                # 4. Mã hóa Base64
+                return base64.b64encode(img_bytes).decode('utf-8')
+        except FileNotFoundError:
+            print(f"--- ⚠️ Lỗi khi xử lý ảnh: File không tồn tại tại '{image_path}' ---")
+            return ""
         except Exception as e:
-            print(f"--- ⚠️ Lỗi khi mã hóa ảnh {image_path}: {e} ---")
+            print(f"--- ⚠️ Lỗi khi xử lý ảnh {image_path}: {e} ---")
             return ""
 
     # === HÀM ĐÃ ĐƯỢC NÂNG CẤP ===
@@ -69,7 +95,7 @@ class OpenAIHandler:
         Thực hiện VQA sử dụng GPT-4o, có thể nhận thêm bối cảnh từ transcript.
         *** PHIÊN BẢN CÓ XỬ LÝ LỖI TỐT HƠN VÀ BỐI CẢNH MỞ RỘNG ***
         """
-        base64_image = self._encode_image_to_base64(image_path)
+        base64_image = self._preprocess_and_encode_image(image_path)
         if not base64_image:
             return {"answer": "Lỗi: Không thể xử lý ảnh", "confidence": 0.0}
 

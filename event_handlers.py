@@ -130,7 +130,7 @@ def on_gallery_select(response_state: Dict[str, Any], current_page: int, evt: gr
         
         target_frame = sequence[0] # Lấy frame đầu làm đại diện
         html_output = f"<h4>Chuỗi hành động ({len(sequence)} bước)</h4>"
-        # ... (code tạo HTML chi tiết cho chuỗi TRAKE)
+        # (code tạo HTML chi tiết cho chuỗi TRAKE có thể thêm ở đây)
         video_clip_path = create_video_segment(target_frame.get('video_path'), target_frame.get('timestamp'))
         clip_info_html = "Clip đại diện cho chuỗi hành động."
         return target_frame.get('keyframe_path'), video_clip_path, pd.DataFrame(), "", "", selected_result, html_output, clip_info_html
@@ -165,7 +165,8 @@ def add_to_submission_list(
     if not candidate:
         gr.Warning("Chưa có ứng viên nào được chọn để thêm!")
         choices = [f"{i+1}. ..." for i, item in enumerate(submission_list)]
-        return format_submission_list_for_display(submission_list), submission_list, gr.Dropdown.update(choices=choices)
+        # === FIX HERE: Bỏ `.update` ===
+        return format_submission_list_for_display(submission_list), submission_list, gr.Dropdown(choices=choices)
 
     task_type = response_state.get("task_type")
     item_to_add = candidate.copy()
@@ -181,18 +182,18 @@ def add_to_submission_list(
             submission_list.append(item_to_add)
         gr.Success(f"Đã thêm kết quả vào {'đầu' if position == 'top' else 'cuối'} danh sách!")
 
-    # === FIX SYNTAX ERROR HERE ===
-    # We avoid nested f-strings by using regular string concatenation for the fallback case.
     new_choices = [
         f"{i+1}. {item.get('keyframe_id') or 'TRAKE (' + str(item.get('video_id')) + ')'}" 
         for i, item in enumerate(submission_list)
     ]
-    return format_submission_list_for_display(submission_list), submission_list, gr.Dropdown.update(choices=new_choices, value=None)
+    # === FIX HERE: Bỏ `.update` ===
+    return format_submission_list_for_display(submission_list), submission_list, gr.Dropdown(choices=new_choices, value=None)
 
 def clear_submission_list():
     """Xóa toàn bộ danh sách nộp bài."""
     gr.Info("Đã xóa danh sách nộp bài.")
-    return "Chưa có kết quả nào được thêm vào.", [], gr.Dropdown.update(choices=[], value=None)
+    # === FIX HERE: Bỏ `.update` ===
+    return "Chưa có kết quả nào được thêm vào.", [], gr.Dropdown(choices=[], value=None)
 
 def modify_submission_list(
     submission_list: list, selected_item_index_str: str, action: str
@@ -216,12 +217,12 @@ def modify_submission_list(
     elif action == 'remove':
         submission_list.pop(index)
 
-    # === FIX SYNTAX ERROR & ENSURE CONSISTENCY HERE ===
     new_choices = [
         f"{i+1}. {item.get('keyframe_id') or 'TRAKE (' + str(item.get('video_id')) + ')'}" 
         for i, item in enumerate(submission_list)
     ]
-    return format_submission_list_for_display(submission_list), submission_list, gr.Dropdown.update(choices=new_choices, value=None)
+    # === FIX HERE: Bỏ `.update` ===
+    return format_submission_list_for_display(submission_list), submission_list, gr.Dropdown(choices=new_choices, value=None)
 
 def handle_submission(submission_list: list, query_id: str):
     """Tạo và cung cấp file nộp bài định dạng CSV."""
@@ -267,7 +268,8 @@ def clear_all():
         # Cột phải - Vùng nộp bài
         "Chưa có kết quả nào được thêm vào.",       # submission_list_display
         [],                                         # submission_list_state
-        gr.Dropdown.update(choices=[], value=None), # submission_list_selector
+        # === FIX HERE: Bỏ `.update` ===
+        gr.Dropdown(choices=[], value=None),        # submission_list_selector
         "",                                         # query_id_input
         None,                                       # submission_file_output
     )

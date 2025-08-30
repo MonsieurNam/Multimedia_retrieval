@@ -729,11 +729,23 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                             label="Số chuỗi kết quả tối đa (TRAKE)",
                             info="Số lượng chuỗi tối đa sẽ được trả về."
                         )
-                    with gr.TabItem("⚖️ Trọng số Rerank"):
+                        
+                    with gr.TabItem("⚖️ Trọng số & Đa dạng"):
                         gr.Markdown("Điều chỉnh tầm quan trọng của các yếu tố khi tính điểm cuối cùng.")
                         w_clip_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.4, step=0.05, label="w_clip (Thị giác Tổng thể)")
                         w_obj_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.3, step=0.05, label="w_obj (Đối tượng)")
                         w_semantic_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.3, step=0.05, label="w_semantic (Ngữ nghĩa)")
+                        
+                        # --- THÊM WIDGET BỊ THIẾU VÀO ĐÂY ---
+                        gr.Markdown("---") # Thêm một đường kẻ ngang để phân tách
+                        gr.Markdown("Điều chỉnh sự cân bằng giữa Độ liên quan và Sự đa dạng của kết quả.")
+                        lambda_mmr_slider = gr.Slider(
+                            minimum=0.0, 
+                            maximum=1.0, 
+                            value=0.7, 
+                            step=0.05, 
+                            label="λ - MMR (0.0=Đa dạng nhất, 1.0=Liên quan nhất)"
+                        )
 
             # --- 3. Khu vực Trạng thái & Phân tích ---
             status_output = gr.HTML()
@@ -791,7 +803,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     search_inputs = [
         query_input, num_results, kis_retrieval_slider, vqa_candidates_slider,
         vqa_retrieval_slider, trake_candidates_per_step_slider, trake_max_sequences_slider,
-        w_clip_slider, w_obj_slider, w_semantic_slider
+        w_clip_slider, w_obj_slider, w_semantic_slider, lambda_mmr_slider 
     ]
     search_outputs = [
         results_gallery, status_output, response_state, gemini_analysis, stats_info,

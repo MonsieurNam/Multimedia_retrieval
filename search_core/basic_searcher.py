@@ -25,6 +25,7 @@ class BasicSearcher:
         for dist, idx in zip(distances[0], indices[0]):
             if idx != -1:
                 info = self.metadata.iloc[idx].to_dict()
-                info['clip_score'] = 1 - dist
+                scale_factor = 0.5 
+                info['clip_score'] = np.exp(-scale_factor * dist)
                 results.append(info)
         return results

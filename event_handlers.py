@@ -181,7 +181,12 @@ def add_to_submission_list(
             submission_list.append(item_to_add)
         gr.Success(f"Đã thêm kết quả vào {'đầu' if position == 'top' else 'cuối'} danh sách!")
 
-    new_choices = [f"{i+1}. {item.get('keyframe_id') or f'TRAKE ({item.get('video_id')})'}" for i, item in enumerate(submission_list)]
+    # === FIX SYNTAX ERROR HERE ===
+    # We avoid nested f-strings by using regular string concatenation for the fallback case.
+    new_choices = [
+        f"{i+1}. {item.get('keyframe_id') or 'TRAKE (' + str(item.get('video_id')) + ')'}" 
+        for i, item in enumerate(submission_list)
+    ]
     return format_submission_list_for_display(submission_list), submission_list, gr.Dropdown.update(choices=new_choices, value=None)
 
 def clear_submission_list():
@@ -211,7 +216,11 @@ def modify_submission_list(
     elif action == 'remove':
         submission_list.pop(index)
 
-    new_choices = [f"{i+1}. {item.get('keyframe_id') or 'TRAKE'}" for i, item in enumerate(submission_list)]
+    # === FIX SYNTAX ERROR & ENSURE CONSISTENCY HERE ===
+    new_choices = [
+        f"{i+1}. {item.get('keyframe_id') or 'TRAKE (' + str(item.get('video_id')) + ')'}" 
+        for i, item in enumerate(submission_list)
+    ]
     return format_submission_list_for_display(submission_list), submission_list, gr.Dropdown.update(choices=new_choices, value=None)
 
 def handle_submission(submission_list: list, query_id: str):
@@ -236,8 +245,6 @@ def handle_submission(submission_list: list, query_id: str):
 
 def clear_all():
     """Reset toàn bộ giao diện về trạng thái ban đầu."""
-    # Trả về một tuple chứa giá trị mặc định cho tất cả các component output
-    # Số lượng và thứ tự phải khớp chính xác với `clear_outputs` trong `app.py`
     return (
         # Cột trái
         [],                                         # results_gallery

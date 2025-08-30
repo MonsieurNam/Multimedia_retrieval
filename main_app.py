@@ -1178,7 +1178,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     # 5. Sự kiện Xóa tất cả
     clear_outputs = [
         results_gallery, status_output, response_state, gemini_analysis, stats_info,
-        gallery_items_state, selected_indices_state, selected_count_md, selected_preview,
+        gallery_items_state, selected_indices_state,
         current_page_state, page_info_display,
         
         selected_image_display, video_player, scores_display, vqa_answer_display,

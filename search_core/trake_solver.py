@@ -1,6 +1,5 @@
 
 from typing import List, Dict, Any
-from itertools import product
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -39,86 +38,90 @@ class TRAKESolver:
     def find_sequences(self, 
                        sub_queries: List[str], 
                        searcher: 'SemanticSearcher', 
-                       top_k_per_step: int , 
-                       max_sequences: int
+                       top_k_per_step: int, 
+                       max_sequences: int,
+                       beam_width: int = 5 # Thêm tham số beam_width
                       ) -> List[Dict[str, Any]]:
         """
-        Tìm các chuỗi keyframe hợp lệ dựa trên danh sách các truy vấn con.
-
-        Đây là hàm cốt lõi của TRAKE, thực hiện tìm kiếm đa bước và lắp ráp kết quả.
-
-        Args:
-            sub_queries (List[str]): Danh sách các truy vấn cho từng bước.
-            searcher (SemanticSearcher): Instance của SemanticSearcher để thực hiện reranking.
-            top_k_per_step (int): Số lượng ứng viên hàng đầu cần lấy cho mỗi bước.
-            max_sequences (int): Số lượng chuỗi kết quả tối đa trả về.
-
-        Returns:
-            List[Dict[str, Any]]: Một danh sách các chuỗi hợp lệ, được sắp xếp theo điểm.
+        Tìm các chuỗi keyframe hợp lệ bằng thuật toán Beam Search.
         """
         if not sub_queries:
             return []
 
         print(f"--- Bắt đầu tìm kiếm ứng viên cho {len(sub_queries)} bước TRAKE ---")
         
-        # --- Bước 1: Tìm kiếm ứng viên cho mỗi bước một cách độc lập ---
+        # --- Bước 1: Tìm kiếm ứng viên cho mỗi bước (không đổi) ---
         step_candidates = []
         for i, sub_query in enumerate(sub_queries):
-            print(f"   -> Bước {i+1}: Đang phân tích và tìm kiếm cho '{sub_query}'")
+            print(f"   -> Bước {i+1}: Đang tìm kiếm cho '{sub_query}'")
             
-            # 1a. Tự gọi AI Handler để phân tích truy vấn con
-            # Điều này đảm bảo mỗi bước được tìm kiếm với context và object chính xác nhất.
-            sub_query_analysis = self.ai_handler.enhance_query(sub_query)
+            # Logic gọi AI handler và searcher giữ nguyên
+            sub_query_analysis = self.ai_handler.analyze_query_fully(sub_query)
             search_context = sub_query_analysis.get('search_context', sub_query)
-
-            # 1b. Truyền kết quả phân tích vào searcher để reranking
-            # SemanticSearcher giờ đây không cần gọi API nữa, chỉ làm nhiệm vụ rerank.
+            
             results = searcher.search(
                 query_text=search_context,
                 precomputed_analysis=sub_query_analysis,
                 top_k_final=top_k_per_step,
-                top_k_retrieval=200  # Lấy nhiều ứng viên thô để tăng cơ hội
+                top_k_retrieval=200
             )
             step_candidates.append(results)
-
-        # --- Bước 2: Nhóm các ứng viên theo video_id để giảm không gian tìm kiếm ---
+        
+        # --- Bước 2: Nhóm ứng viên theo video_id (không đổi) ---
         print("\n--- Đang nhóm các ứng viên theo video ---")
         candidates_by_video: Dict[str, List[List[Dict]]] = {}
         for i, candidates in enumerate(step_candidates):
             for cand in candidates:
                 video_id = cand['video_id']
                 if video_id not in candidates_by_video:
+                    # Khởi tạo danh sách rỗng cho mỗi bước
                     candidates_by_video[video_id] = [[] for _ in sub_queries]
                 candidates_by_video[video_id][i].append(cand)
         
-        # --- Bước 3: Duyệt qua từng video để tìm và xác thực các chuỗi ---
-        print("\n--- Bắt đầu lắp ráp và xác thực các chuỗi ---")
-        valid_sequences = []
-        for video_id, steps in candidates_by_video.items():
-            # Điều kiện tiên quyết: video phải có ít nhất một ứng viên cho MỖI bước
-            if not all(steps):
+        # --- Bước 3: Áp dụng Beam Search trên từng video ---
+        print(f"\n--- Bắt đầu lắp ráp chuỗi bằng Beam Search (beam_width={beam_width}) ---")
+        all_valid_sequences = []
+        for video_id, video_step_candidates in candidates_by_video.items():
+            # Điều kiện tiên quyết: video phải có ứng viên cho mỗi bước
+            if not all(video_step_candidates):
                 continue
             
-            # Sử dụng `itertools.product` để tạo ra tất cả các tổ hợp chuỗi khả thi
-            for sequence_tuple in product(*steps):
-                # Ràng buộc cứng: thứ tự thời gian phải tăng dần
-                is_valid_order = all(
-                    sequence_tuple[i]['timestamp'] < sequence_tuple[i+1]['timestamp'] 
-                    for i in range(len(sequence_tuple) - 1)
-                )
-                
-                if is_valid_order:
-                    # Tính điểm cho chuỗi bằng trung bình cộng điểm của các frame
-                    avg_score = sum(item['final_score'] for item in sequence_tuple) / len(sequence_tuple)
+            # Khởi tạo beam với các ứng viên của bước đầu tiên
+            # Mỗi phần tử trong beam là một tuple: (chuỗi_hiện_tại, điểm_số_tích_lũy)
+            beam = [([cand], cand['final_score']) for cand in video_step_candidates[0]]
+            
+            # Lặp qua các bước tiếp theo để mở rộng beam
+            for step_idx in range(1, len(sub_queries)):
+                next_beam = []
+                # Với mỗi chuỗi đang có trong beam
+                for current_sequence, current_score in beam:
+                    last_frame_timestamp = current_sequence[-1]['timestamp']
                     
-                    valid_sequences.append({
-                        "video_id": video_id,
-                        "sequence": list(sequence_tuple),
-                        "final_score": avg_score
-                    })
+                    # Tìm các ứng viên hợp lệ ở bước tiếp theo
+                    for next_candidate in video_step_candidates[step_idx]:
+                        # Ràng buộc cứng: thứ tự thời gian phải tăng dần
+                        if next_candidate['timestamp'] > last_frame_timestamp:
+                            new_sequence = current_sequence + [next_candidate]
+                            # Điểm số mới là tổng điểm tích lũy + điểm của frame mới
+                            new_score = current_score + next_candidate['final_score']
+                            next_beam.append((new_sequence, new_score))
+                
+                # Sắp xếp tất cả các chuỗi mở rộng và chỉ giữ lại `beam_width` chuỗi tốt nhất
+                next_beam.sort(key=lambda x: x[1], reverse=True)
+                beam = next_beam[:beam_width]
 
-        # --- Bước 4: Sắp xếp tất cả các chuỗi hợp lệ và trả về kết quả cuối cùng ---
-        print(f"--- Tìm thấy tổng cộng {len(valid_sequences)} chuỗi hợp lệ. Đang sắp xếp... ---")
-        sorted_sequences = sorted(valid_sequences, key=lambda x: x['final_score'], reverse=True)
+            # Sau khi duyệt qua tất cả các bước, các chuỗi trong beam là các chuỗi hoàn chỉnh
+            for final_sequence, total_score in beam:
+                # Điểm cuối cùng là trung bình cộng
+                avg_score = total_score / len(final_sequence)
+                all_valid_sequences.append({
+                    "video_id": video_id,
+                    "sequence": final_sequence,
+                    "final_score": avg_score
+                })
+
+        # --- Bước 4: Sắp xếp tất cả các chuỗi hợp lệ từ tất cả các video ---
+        print(f"--- Tìm thấy tổng cộng {len(all_valid_sequences)} chuỗi hợp lệ. Đang sắp xếp... ---")
+        sorted_sequences = sorted(all_valid_sequences, key=lambda x: x['final_score'], reverse=True)
         
         return sorted_sequences[:max_sequences]

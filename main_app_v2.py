@@ -209,28 +209,28 @@ def add_to_submission_list(submission_list: pd.DataFrame, kis_qna_df: pd.DataFra
 
 def build_trake_workspace(trake_steps_data):
     """
-    Tạo hoặc cập nhật các component trong không gian làm việc TRAKE.
-    Hàm này sẽ trả về một list các Gradio component.
+    *** HÀM SỬA LỖI 1 ***
+    Tạo hoặc cập nhật các giá trị cho các component trong không gian làm việc TRAKE.
+    Hàm này sẽ trả về một tuple các giá trị, mỗi giá trị cho một component.
     """
-    if not trake_steps_data:
-        # Ẩn không gian làm việc nếu không có dữ liệu
-        return [gr.HTML(visible=False)] * (len(trake_candidate_tables) * 2)
-
+    MAX_STEPS = 6 # Phải khớp với số component đã tạo trong UI
     outputs = []
-    # `trake_steps_data` là một list các DataFrame
-    for i, df_step in enumerate(trake_steps_data):
-        # Cập nhật Markdown header
-        outputs.append(gr.Markdown(f"<h4>Bước {i+1}</h4>", visible=True))
-        # Cập nhật DataFrame cho bước đó
-        outputs.append(gr.DataFrame(df_step, visible=True))
     
-    # Ẩn các component thừa nếu số bước ít hơn max
-    num_steps = len(trake_steps_data)
-    for i in range(num_steps, len(trake_candidate_tables)):
-        outputs.append(gr.Markdown(visible=False))
-        outputs.append(gr.DataFrame(visible=False))
+    # Dữ liệu đầu vào là list các DataFrame
+    num_steps = len(trake_steps_data) if trake_steps_data else 0
 
-    return outputs
+    for i in range(MAX_STEPS):
+        if i < num_steps:
+            # Nếu có dữ liệu cho bước này
+            outputs.append(gr.Markdown(f"<h4>Bước {i+1}</h4>", visible=True))
+            outputs.append(gr.DataFrame(trake_steps_data[i], visible=True))
+        else:
+            # Nếu không, ẩn component đi
+            outputs.append(gr.Markdown(visible=False))
+            outputs.append(gr.DataFrame(visible=False))
+            
+    # Trả về một tuple, Gradio sẽ tự động giải nén nó vào các output
+    return tuple(outputs)
     
 def update_current_sequence(current_sequence: pd.DataFrame, step_index: int, all_steps_data: list, evt: gr.SelectData):
     """
@@ -277,7 +277,10 @@ def clear_current_sequence():
     return pd.DataFrame(), "Đã xóa chuỗi hiện tại."
     
 def add_sequence_to_submission(submission_list: pd.DataFrame, current_sequence: pd.DataFrame):
-    """Thêm chuỗi hiện tại (đã được xác thực) vào danh sách nộp bài."""
+    """
+    *** HÀM SỬA LỖI 2 ***
+    Thêm chuỗi hiện tại (đã được xác thực) vào danh sách nộp bài.
+    """
     is_valid, msg = validate_sequence(current_sequence)
     if not is_valid:
         gr.Warning(f"Không thể thêm chuỗi không hợp lệ! {msg}")
@@ -286,8 +289,12 @@ def add_sequence_to_submission(submission_list: pd.DataFrame, current_sequence: 
         gr.Warning("Chuỗi đang xây dựng rỗng!")
         return submission_list
 
-    # Định dạng lại chuỗi thành một hàng duy nhất để nộp bài
-    submission_row = { 'task_type': ['TRAKE'], 'final_score': [current_sequence['final_score'].mean()] }
+    # **SỬA LỖI TẠI ĐÂY**: Chuyển đổi cột 'final_score' sang dạng số, ép lỗi thành NaN
+    scores = pd.to_numeric(current_sequence['final_score'], errors='coerce')
+    # Tính trung bình, bỏ qua các giá trị NaN
+    mean_score = scores.mean()
+
+    submission_row = { 'task_type': ['TRAKE'], 'final_score': [mean_score] }
     submission_row['video_id'] = [current_sequence['video_id'].iloc[0]]
     for i, row in current_sequence.iterrows():
         submission_row[f'frame_moment_{i+1}'] = [row['keyframe_id']]
@@ -415,7 +422,8 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
     ).then(
         fn=build_trake_workspace,
         inputs=[trake_steps_state],
-        outputs=trake_candidate_headers + trake_candidate_tables # Truyền list component vào outputs
+        # **SỬA LỖI 1**: Unpack list component ra
+        outputs=trake_candidate_headers + trake_candidate_tables
     )
     
     # 2. Sự kiện Chọn một hàng trong bảng KIS/Q&A

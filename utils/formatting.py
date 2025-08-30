@@ -6,57 +6,83 @@ import os
 # Import TaskType để sử dụng trong type hinting
 from search_core.task_analyzer import TaskType
 
-def format_results_for_gallery(response: Dict[str, Any]) -> List[tuple]:
+def format_results_for_gallery(response: Dict[str, Any]) -> List[str]:
     """
-    Định dạng kết quả thô thành định dạng phù hợp cho gr.Gallery.
-    *** PHIÊN BẢN MỚI: Xử lý kết quả tổng hợp TRACK_VQA ***
+    Định dạng kết quả thô thành định dạng cho gr.Gallery (chỉ trả về đường dẫn ảnh).
+    PHIÊN BẢN "COCKPIT V3.3"
     """
-    task_type = response.get("task_type")
     results = response.get("results", [])
+    task_type = response.get("task_type")
     
-    formatted_gallery = []
+    # Logic mới: Chỉ trả về đường dẫn ảnh để UI load nhanh
+    gallery_paths = []
+    if not results:
+        return []
+
+    for res in results:
+        keyframe_path = None
+        # Đối với TRAKE, lấy ảnh đại diện là frame đầu tiên của chuỗi
+        if task_type == TaskType.TRAKE:
+            sequence = res.get('sequence', [])
+            if sequence:
+                keyframe_path = sequence[0].get('keyframe_path')
+        # Đối với KIS và QNA, lấy trực tiếp
+        else:
+            keyframe_path = res.get('keyframe_path')
+
+        if keyframe_path and os.path.isfile(keyframe_path):
+            gallery_paths.append(keyframe_path)
+            
+    return gallery_paths
+
+def format_results_for_mute_gallery(response: Dict[str, Any]) -> List[str]:
+    """
+    Định dạng kết quả thô CHỈ LẤY ĐƯỜNG DẪN ẢNH cho "Lưới ảnh câm" (Cockpit v3.3).
+    """
+    # ==============================================================================
+    # === DEBUG LOG: KIỂM TRA INPUT ==============================================
+    # ==============================================================================
+    print("\n" + "="*20 + " DEBUG LOG: format_results_for_mute_gallery " + "="*20)
+    print(f"-> Nhận được response với các key: {response.keys() if isinstance(response, dict) else 'Không phải dict'}")
+    results = response.get("results", [])
+    task_type = response.get("task_type")
+    print(f"-> Task Type: {task_type}")
+    print(f"-> Số lượng 'results' nhận được: {len(results)}")
+    if results:
+        print(f"-> Cấu trúc của result đầu tiên: {results[0].keys() if isinstance(results[0], dict) else 'Không phải dict'}")
+        # Kiểm tra sự tồn tại của key 'keyframe_path'
+        if 'keyframe_path' in results[0]:
+             print(f"  -> Key 'keyframe_path' tồn tại. Giá trị: {results[0]['keyframe_path']}")
+        else:
+             print("  -> 🚨 CẢNH BÁO: Key 'keyframe_path' KHÔNG TỒN TẠI trong result đầu tiên!")
+    print("="*75 + "\n")
+    # ==============================================================================
 
     if not results:
         return []
         
-    # Duyệt qua tất cả các kết quả trả về
-    for res in results:
-        # --- LOGIC XỬ LÝ MỚI ---
-        if res.get("is_aggregated_result"):
-            # Nếu đây là kết quả tổng hợp của TRACK_VQA
-            final_answer = res.get("final_answer", "Không có câu trả lời.")
-            short_answer = (final_answer[:100] + '...') if len(final_answer) > 103 else final_answer
-            caption = (f"💡 **Kết quả Phân tích Tổng hợp**\n{short_answer}")
-            
-            keyframe_path = res.get("keyframe_path") # Lấy đường dẫn ảnh đại diện
-            if keyframe_path and os.path.isfile(keyframe_path):
-                formatted_gallery.append((keyframe_path, caption))
-            else:
-                # Nếu không có ảnh bằng chứng, không hiển thị gì trong gallery
-                # Thông tin sẽ được hiển thị ở status_output hoặc detailed_info
-                pass
-        
-        elif res.get("video_id"): # Xử lý cho KIS, QNA, TRAKE (kết quả frame đơn lẻ)
-            scores = res.get('scores', {})
-            final_score = res.get('final_score', 0)
-            
-            answer_text = ""
-            if task_type == TaskType.QNA and "answer" in res:
-                answer = res.get('answer', '...')
-                short_answer = (answer[:30] + '...') if len(answer) > 33 else answer
-                answer_text = f"\n💬 Đáp: {short_answer}"
+    task_type = response.get("task_type")
+    
+    keyframe_paths = []
 
-            caption = (
-                f"📹 {res.get('video_id', 'N/A')}\n"
-                f"⏰ {res.get('timestamp', 0):.1f}s | 🏆 {final_score:.3f}"
-                f"{answer_text}"
-            )
+    # Với TRAKE, mỗi kết quả là một chuỗi. Ảnh đại diện là frame ĐẦU TIÊN của chuỗi.
+    if task_type == TaskType.TRAKE:
+        for sequence_result in results:
+            sequence = sequence_result.get('sequence', [])
+            if sequence: # Đảm bảo chuỗi không rỗng
+                first_frame = sequence[0]
+                path = first_frame.get('keyframe_path')
+                if path and os.path.isfile(path):
+                    keyframe_paths.append(path)
+    
+    # Với KIS và QNA, mỗi kết quả là một frame đơn lẻ.
+    else: # Bao gồm KIS, QNA
+        for single_frame_result in results:
+            path = single_frame_result.get('keyframe_path')
+            if path and os.path.isfile(path):
+                keyframe_paths.append(path)
 
-            keyframe_path = res.get('keyframe_path')
-            if keyframe_path and os.path.isfile(keyframe_path):
-                formatted_gallery.append((keyframe_path, caption))
-
-    return formatted_gallery
+    return keyframe_paths
 
 def format_for_submission(response: Dict[str, Any], max_results: int = 100) -> pd.DataFrame:
     """
@@ -71,7 +97,7 @@ def format_for_submission(response: Dict[str, Any], max_results: int = 100) -> p
     """
     task_type = response.get("task_type")
     results = response.get("results", [])
-    
+        
     submission_data = []
 
     if task_type == TaskType.KIS:

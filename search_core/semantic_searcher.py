@@ -112,11 +112,14 @@ class SemanticSearcher:
             # Tính Semantic Score
             semantic_score = (semantic_scores_tensor[i].item() + 1) / 2
             
+            original_clip_score = cand['clip_score'] # Nằm trong khoảng [-1, 1]
+            # Chuẩn hóa điểm CLIP về [0, 1] để cộng hưởng tốt hơn
+            normalized_clip_score = (original_clip_score + 1) / 2
+            
             # Tính Final Score
             w_clip = precomputed_analysis.get('w_clip', 0.4)
             w_obj = precomputed_analysis.get('w_obj', 0.3)
             w_semantic = precomputed_analysis.get('w_semantic', 0.3)
-            normalized_clip_score = cand['clip_score']
             
             final_score = (w_clip * normalized_clip_score + 
                            w_obj * object_score + 

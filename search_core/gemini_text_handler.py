@@ -60,26 +60,23 @@ class GeminiTextHandler:
     def analyze_task_type(self, query: str) -> str:
         """Phân loại truy vấn bằng Gemini, sử dụng prompt có Quy tắc Ưu tiên."""
         prompt = f"""
-        You are a highly precise query classifier. Your task is to classify a Vietnamese query into one of four categories: TRACK_VQA, TRAKE, QNA, or KIS. You MUST follow a strict priority order.
+        You are a highly precise query classifier. Your task is to classify a Vietnamese query into one of four categories: TRAKE, QNA, or KIS. You MUST follow a strict priority order.
 
         **Priority Order for Classification (Check from top to bottom):**
-
-        1.  **Check for TRACK_VQA first:** Does the query ask a question about a COLLECTION of items, requiring aggregation (counting, listing, summarizing)? Look for keywords like "đếm", "bao nhiêu", "liệt kê", "tất cả", "mỗi", or plural subjects. If it matches, classify as **TRACK_VQA** and stop.
-            - Example: "trong buổi trình diễn múa lân, đếm xem có bao nhiêu con lân" -> This is a request to count a collection, so it is **TRACK_VQA**.
-
-        2.  **Then, check for TRAKE:** If it's not TRACK_VQA, does the query ask for a SEQUENCE of DIFFERENT, ordered actions? Look for patterns like "(1)...(2)...", "bước 1... bước 2", "sau đó". If it matches, classify as **TRAKE** and stop.
+        
+        1.  **First, check for TRAKE:** Does the query ask for a SEQUENCE of DIFFERENT, ordered actions? Look for patterns like "(1)...(2)...", "bước 1... bước 2", "sau đó". If it matches, classify as **TRAKE** and stop.
             - Example: "người đàn ông đứng lên rồi bước đi"
 
-        3.  **Then, check for QNA:** If not TRACK_VQA or TRAKE, does the query ask a **direct question** that expects a factual answer about something in the scene? This is more than just describing a scene. Look for:
+        2.  **Then, check for QNA:** If not TRAKE, does the query ask a **direct question** that expects a factual answer about something in the scene? This is more than just describing a scene. Look for:
             - **Interrogative words:** "ai", "cái gì", "ở đâu", "khi nào", "tại sao", "như thế nào", "màu gì", "hãng nào", etc.
             - **Question structures:** "có phải là...", "đang làm gì", "là ai", "trông như thế nào".
             - A question mark "?".
             If it matches, classify as **QNA** and stop.
             - Example: "người phụ nữ mặc áo màu gì?" -> QNA
             - Example: "ai là người đàn ông đang phát biểu?" -> QNA
-            - Example: "có bao nhiêu chiếc xe trên đường?" -> This asks for a count of a single scene, so it is **QNA**. (Distinguish this from TRACK_VQA which counts across multiple scenes/videos).
+            - Example: "có bao nhiêu chiếc xe trên đường?" -> This asks for a count of a single scene, so it is **QNA**. 
 
-        4.  **Default to KIS:** If the query is a statement or a descriptive phrase looking for a moment, classify as **KIS**. It describes "what to find", not "what to answer".
+        3.  **Default to KIS:** If the query is a statement or a descriptive phrase looking for a moment, classify as **KIS**. It describes "what to find", not "what to answer".
             - Example: "cảnh người đàn ông đang phát biểu" -> KIS
             - Example: "tìm người phụ nữ mặc áo đỏ" -> KIS
             - Example: "một chiếc xe đang chạy" -> KIS
@@ -93,7 +90,7 @@ class GeminiTextHandler:
         try:
             response = self._gemini_text_call(prompt)
             task_type = response.text.strip().upper()
-            if task_type in ["KIS", "QNA", "TRAKE", "TRACK_VQA"]:
+            if task_type in ["KIS", "QNA", "TRAKE"]:
                 return task_type
             return "KIS"
         except Exception:
@@ -110,36 +107,34 @@ class GeminiTextHandler:
         }
         
         prompt = f"""
-        You are a master Vietnamese query analyzer for a video search system. Analyze the user's query and return ONLY a single, valid JSON object with ALL the following keys: "task_type", "search_context", "specific_question", "aggregation_instruction", "objects_vi", "objects_en".
+            You are a master Vietnamese query analyzer. Analyze the query and return ONLY a single, valid JSON object with the keys: "task_type", "search_context", "specific_question", "objects_vi", "objects_en".
 
-        **Analysis Steps & Rules:**
+            **Analysis Steps & Rules:**
 
-        1.  **Determine `task_type` FIRST (Strict Priority):**
-            - **TRACK_VQA:** Does it ask to aggregate (count, list, summarize) info about a COLLECTION of items across scenes? (e.g., "đếm số lân", "liệt kê tất cả các xe"). If yes, `task_type` is "TRACK_VQA".
-            - **TRAKE:** If not, does it ask for a SEQUENCE of distinct actions? (e.g., "đứng lên rồi đi ra"). If yes, `task_type` is "TRAKE".
-            - **QNA:** If not, is it a DIRECT QUESTION expecting a factual answer about a single scene? (e.g., "ai là người...", "màu gì?", "đang làm gì?"). If yes, `task_type` is "QNA".
-            - **KIS:** Otherwise, it's a descriptive search. `task_type` is "KIS".
+            1.  **Determine `task_type` FIRST (Strict Priority):**
+                - **TRAKE:** Does it ask for a SEQUENCE of distinct actions? (e.g., "đứng lên rồi đi ra"). If yes, `task_type` is "TRAKE".
+                - **QNA:** If not, is it a DIRECT QUESTION? (e.g., "ai là người...", "màu gì?", "đang làm gì?"). If yes, `task_type` is "QNA".
+                - **KIS:** Otherwise, it's a descriptive search. `task_type` is "KIS".
 
-        2.  **Fill other keys based on `task_type`:**
-            - `search_context`: The general scene to search for. ALWAYS FILL THIS.
-            - `specific_question`: The specific question for a vision model. ONLY for QNA and TRACK_VQA.
-            - `aggregation_instruction`: The final goal. ONLY for TRACK_VQA.
-            - `objects_vi` & `objects_en`: Key nouns/entities from the query.
+            2.  **Fill other keys based on `task_type`:**
+                - `search_context`: The general scene to search for. ALWAYS FILL THIS.
+                - `specific_question`: The specific question for a vision model. ONLY for QNA. For others, it's an empty string.
+                - `objects_vi` & `objects_en`: Key nouns/entities from the query.
 
-        **Example 1 (QNA):**
-        Query: "ai là người đàn ông đội mũ đỏ đang phát biểu ở mỹ"
-        JSON: {{"task_type": "QNA", "search_context": "cảnh người đàn ông đội mũ đỏ đang phát biểu ở Mỹ", "specific_question": "ai là người đàn ông này?", "aggregation_instruction": "", "objects_vi": ["người đàn ông", "mũ đỏ", "phát biểu", "Mỹ"], "objects_en": ["man", "red hat", "speaking", "USA"]}}
+            **Example 1 (QNA):**
+            Query: "ai là người đàn ông đội mũ đỏ đang phát biểu ở mỹ"
+            JSON: {{"task_type": "QNA", "search_context": "cảnh người đàn ông đội mũ đỏ đang phát biểu ở Mỹ", "specific_question": "ai là người đàn ông này?", "objects_vi": ["người đàn ông", "mũ đỏ", "phát biểu", "Mỹ"], "objects_en": ["man", "red hat", "speaking", "USA"]}}
 
-        **Example 2 (KIS):**
-        Query: "cảnh người đàn ông đội mũ đỏ phát biểu ở mỹ"
-        JSON: {{"task_type": "KIS", "search_context": "cảnh người đàn ông đội mũ đỏ phát biểu ở Mỹ", "specific_question": "", "aggregation_instruction": "", "objects_vi": ["người đàn ông", "mũ đỏ", "phát biểu", "Mỹ"], "objects_en": ["man", "red hat", "speaking", "USA"]}}
-        ---
-        **Your Task:**
-        Analyze the query below and generate the required JSON object.
+            **Example 2 (KIS):**
+            Query: "cảnh người đàn ông đội mũ đỏ phát biểu ở mỹ"
+            JSON: {{"task_type": "KIS", "search_context": "cảnh người đàn ông đội mũ đỏ phát biểu ở Mỹ", "specific_question": "", "objects_vi": ["người đàn ông", "mũ đỏ", "phát biểu", "Mỹ"], "objects_en": ["man", "red hat", "speaking", "USA"]}}
+            ---
+            **Your Task:**
+            Analyze the query below and generate the required JSON object.
 
-        **Query:** "{query}"
-        **JSON:**
-        """
+            **Query:** "{query}"
+            **JSON:**
+            """
         try:
             response = self._gemini_text_call(prompt)
             raw_text = response.text

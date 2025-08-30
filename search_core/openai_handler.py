@@ -6,8 +6,10 @@ import json
 import re
 import base64
 from typing import Dict, Any, List, Optional
-
+import io
+from PIL import Image
 from utils import api_retrier
+import os
 
 class OpenAIHandler:
     """
@@ -54,13 +56,38 @@ class OpenAIHandler:
         
         return ""
 
-    def _encode_image_to_base64(self, image_path: str) -> str:
-        # --- KHÔNG THAY ĐỔI ---
+    def _preprocess_and_encode_image(
+        self, 
+        image_path: str,
+        quality: int = 95 # Vẫn có thể nén nhẹ để giảm payload mà không ảnh hưởng chi tiết
+    ) -> str:
+        """
+        Chuẩn hóa định dạng ảnh (sang RGB) và mã hóa sang Base64.
+        *** KHÔNG THAY ĐỔI KÍCH THƯỚC ẢNH ***
+        """
         try:
-            with open(image_path, "rb") as image_file:
-                return base64.b64encode(image_file.read()).decode('utf-8')
+            with Image.open(image_path) as img:
+                
+                # BƯỚC QUAN TRỌNG NHẤT: Đảm bảo ảnh ở định dạng RGB.
+                # Thao tác này sẽ loại bỏ kênh Alpha (RGBA) hoặc chuyển đổi từ CMYK.
+                if img.mode != 'RGB':
+                    print(f"   -> Chuẩn hóa ảnh '{os.path.basename(image_path)}' từ mode '{img.mode}' sang 'RGB'.")
+                    img = img.convert('RGB')
+
+                # Lưu ảnh vào bộ nhớ đệm (in-memory buffer) để lấy chuỗi bytes.
+                # Việc này cũng giúp chuẩn hóa lại định dạng nén JPEG.
+                buffer = io.BytesIO()
+                img.save(buffer, format="JPEG", quality=quality)
+                img_bytes = buffer.getvalue()
+                
+                # Cuối cùng, mã hóa Base64
+                return base64.b64encode(img_bytes).decode('utf-8')
+
+        except FileNotFoundError:
+            print(f"--- ⚠️ Lỗi khi xử lý ảnh: File không tồn tại tại '{image_path}' ---")
+            return ""
         except Exception as e:
-            print(f"--- ⚠️ Lỗi khi mã hóa ảnh {image_path}: {e} ---")
+            print(f"--- ⚠️ Lỗi khi xử lý ảnh {image_path}: {e} ---")
             return ""
 
     # === HÀM ĐÃ ĐƯỢC NÂNG CẤP ===
@@ -69,7 +96,7 @@ class OpenAIHandler:
         Thực hiện VQA sử dụng GPT-4o, có thể nhận thêm bối cảnh từ transcript.
         *** PHIÊN BẢN CÓ XỬ LÝ LỖI TỐT HƠN VÀ BỐI CẢNH MỞ RỘNG ***
         """
-        base64_image = self._encode_image_to_base64(image_path)
+        base64_image = self._preprocess_and_encode_image(image_path)
         if not base64_image:
             return {"answer": "Lỗi: Không thể xử lý ảnh", "confidence": 0.0}
 

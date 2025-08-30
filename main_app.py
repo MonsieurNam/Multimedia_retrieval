@@ -131,6 +131,9 @@ def perform_search(query_text: str,
     if not query_text.strip():
         gr.Warning("Vui lòng nhập truy vấn tìm kiếm!")
         return [], "⚠️ Vui lòng nhập truy vấn và bấm Tìm kiếm.", None, "", ""
+    final_w_clip = w_clip if w_clip is not None else 0.4
+    final_w_obj = w_obj if w_obj is not None else 0.3
+    final_w_semantic = w_semantic if w_semantic is not None else 0.3
     
     config = {
         "top_k_final": int(num_results),
@@ -141,9 +144,9 @@ def perform_search(query_text: str,
         "trake_max_sequences": int(trake_max_sequences),
         "track_vqa_retrieval": int(track_vqa_retrieval), 
         "track_vqa_candidates": int(track_vqa_candidates),
-        "w_clip": w_clip,
-        "w_obj": w_obj,
-        "w_semantic": w_semantic
+        "w_clip": final_w_clip,
+        "w_obj": final_w_obj,
+        "w_semantic": final_w_semantic
     }
     
     start_time = time.time()

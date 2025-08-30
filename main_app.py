@@ -787,7 +787,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                 label="Click vào một ảnh để phân tích sâu",
                 show_label=True,
                 elem_id="results-gallery",
-                columns=10, # Giữ nguyên mật độ cao
+                columns=5, # Giữ nguyên mật độ cao
                 object_fit="contain",
                 height=580, # Chiều cao cố định, không cần cuộn
                 allow_preview=False

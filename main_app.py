@@ -863,7 +863,7 @@ if __name__ == "__main__":
     print("--- 🚀 Khởi chạy Gradio App Server ---")
     app.launch(
         share=True,
-        allowed_paths=["/kaggle/input/", "/kaggle/working/"],
+        allowed_paths=["/kaggle/input/", "/kaggle/working/"], 
         debug=True, # Bật debug để xem lỗi chi tiết trên console
         show_error=True # Hiển thị lỗi trên giao diện
     )

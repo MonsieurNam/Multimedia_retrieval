@@ -2,8 +2,7 @@
 
 import gradio as gr
 
-# --- ĐỊNH NGHĨA CÁC ĐOẠN MÃ GIAO DIỆN TĨNH ---
-
+# ... (custom_css, app_header_html, app_footer_html giữ nguyên như cũ) ...
 custom_css = """
 /* Ẩn footer mặc định của Gradio */
 footer {display: none !important}
@@ -43,42 +42,36 @@ app_footer_html = """
     <p style="margin: 0; color: #6c757d;">AIC25 Video Search Engine - Powered by Semantic Search, Object Detection & Generative AI</p>
 </div>
 """
-
-# --- HÀM XÂY DỰNG GIAO DIỆN ---
-
-def build_ui():
+# === KEY CHANGE 1: Hàm build_ui bây giờ chấp nhận một tham số là một hàm khác ===
+def build_ui(connect_events_fn):
     """
-    Xây dựng toàn bộ giao diện người dùng bằng Gradio.
-    Hàm này chỉ định nghĩa layout và các components, không chứa logic xử lý sự kiện.
+    Xây dựng toàn bộ giao diện người dùng và kết nối các sự kiện.
 
+    Args:
+        connect_events_fn (function): Một hàm nhận vào từ điển `components`
+                                     và thực hiện việc kết nối sự kiện (.click, .select...).
+    
     Returns:
-        - app (gr.Blocks): Đối tượng ứng dụng Gradio.
-        - components (dict): Một từ điển chứa tất cả các component quan trọng
-          để có thể gắn sự kiện vào chúng từ file app.py.
+        (gr.Blocks): Đối tượng ứng dụng Gradio đã sẵn sàng để launch.
     """
     with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video Search") as app:
         
         # --- Khai báo States ---
-        # Các state này không hiển thị nhưng dùng để lưu trữ dữ liệu giữa các lần tương tác
         response_state = gr.State()
         gallery_items_state = gr.State([])
         current_page_state = gr.State(1)
         submission_list_state = gr.State([])
         selected_candidate_for_submission = gr.State()
 
-        # --- BỐ CỤC CHÍNH ---
+        # --- BỐ CỤC CHÍNH (giữ nguyên) ---
         gr.HTML(app_header_html)
         
         with gr.Row(variant='panel'):
-            # --- CỘT TRÁI (2/3 không gian): TÌM KIẾM, KẾT QUẢ, THU THẬP ---
+            # --- CỘT TRÁI ---
             with gr.Column(scale=2):
-                
+                # ... (Toàn bộ layout cột trái giữ nguyên)
                 gr.Markdown("### 1. Nhập truy vấn")
-                query_input = gr.Textbox(
-                    label="🔍 Nhập mô tả chi tiết bằng tiếng Việt",
-                    placeholder="Ví dụ: một người phụ nữ mặc váy đỏ đang nói về việc bảo tồn rùa biển...",
-                    lines=2, autofocus=True
-                )
+                query_input = gr.Textbox(label="🔍 Nhập mô tả chi tiết bằng tiếng Việt", placeholder="Ví dụ: một người phụ nữ mặc váy đỏ đang nói về việc bảo tồn rùa biển...", lines=2, autofocus=True)
                 with gr.Row():
                     search_button = gr.Button("🚀 Tìm kiếm", variant="primary", size="lg")
                     clear_button = gr.Button("🗑️ Xóa tất cả", variant="secondary", size="lg")
@@ -110,13 +103,11 @@ def build_ui():
                     prev_page_button = gr.Button("◀️ Trang trước")
                     page_info_display = gr.Markdown("Trang 1 / 1", elem_id="page-info")
                     next_page_button = gr.Button("▶️ Trang sau")
-                results_gallery = gr.Gallery(
-                    label="Click vào một ảnh để phân tích", show_label=True, elem_id="results-gallery",
-                    columns=5, object_fit="contain", height=700, allow_preview=False
-                )
-
-            # --- CỘT PHẢI (1/3 không gian): XEM CHI TIẾT & NỘP BÀI ---
+                results_gallery = gr.Gallery(label="Click vào một ảnh để phân tích", show_label=True, elem_id="results-gallery", columns=5, object_fit="contain", height=700, allow_preview=False)
+            
+            # --- CỘT PHẢI ---
             with gr.Column(scale=1):
+                # ... (Toàn bộ layout cột phải giữ nguyên)
                 gr.Markdown("### 3. Trạm Phân tích")
                 selected_image_display = gr.Image(label="Ảnh Keyframe Được chọn", type="filepath")
                 video_player = gr.Video(label="🎬 Clip 10 giây", autoplay=True)
@@ -135,9 +126,7 @@ def build_ui():
                     add_bottom_button = gr.Button("➕ Thêm vào cuối")
                 with gr.Tabs():
                     with gr.TabItem("📋 Danh sách & Tinh chỉnh"):
-                        submission_list_display = gr.Textbox(
-                            label="Thứ tự Nộp bài (Top 1 ở trên cùng)", lines=12, interactive=False, value="Chưa có kết quả nào."
-                        )
+                        submission_list_display = gr.Textbox(label="Thứ tự Nộp bài (Top 1 ở trên cùng)", lines=12, interactive=False, value="Chưa có kết quả nào.")
                         submission_list_selector = gr.Dropdown(label="Chọn mục để thao tác", choices=[], interactive=True)
                         with gr.Row():
                             move_up_button = gr.Button("⬆️ Lên")
@@ -148,36 +137,40 @@ def build_ui():
                         query_id_input = gr.Textbox(label="Nhập Query ID", placeholder="Ví dụ: query_01")
                         submission_button = gr.Button("💾 Tạo File CSV Nộp bài")
                         submission_file_output = gr.File(label="Tải file nộp bài tại đây")
-                        
+
         gr.HTML(app_footer_html)
         
-    # Tạo một từ điển để trả về tất cả các component cần thiết cho việc kết nối sự kiện
-    components = {
-        # States
-        "response_state": response_state, "gallery_items_state": gallery_items_state,
-        "current_page_state": current_page_state, "submission_list_state": submission_list_state,
-        "selected_candidate_for_submission": selected_candidate_for_submission,
-        # Cột Trái - Inputs & Controls
-        "query_input": query_input, "search_button": search_button, "num_results": num_results,
-        "clear_button": clear_button, "kis_retrieval_slider": kis_retrieval_slider,
-        "vqa_retrieval_slider": vqa_retrieval_slider, "vqa_candidates_slider": vqa_candidates_slider,
-        "trake_candidates_per_step_slider": trake_candidates_per_step_slider,
-        "trake_max_sequences_slider": trake_max_sequences_slider, "w_clip_slider": w_clip_slider,
-        "w_obj_slider": w_obj_slider, "w_semantic_slider": w_semantic_slider, "lambda_mmr_slider": lambda_mmr_slider,
-        # Cột Trái - Outputs & Display
-        "status_output": status_output, "gemini_analysis": gemini_analysis, "stats_info": stats_info,
-        "prev_page_button": prev_page_button, "page_info_display": page_info_display,
-        "next_page_button": next_page_button, "results_gallery": results_gallery,
-        # Cột Phải - Trạm Phân tích
-        "selected_image_display": selected_image_display, "video_player": video_player,
-        "detailed_info": detailed_info, "scores_display": scores_display,
-        "vqa_answer_display": vqa_answer_display, "transcript_display": transcript_display, "clip_info": clip_info,
-        # Cột Phải - Vùng Nộp bài
-        "add_top_button": add_top_button, "add_bottom_button": add_bottom_button,
-        "submission_list_display": submission_list_display, "submission_list_selector": submission_list_selector,
-        "move_up_button": move_up_button, "move_down_button": move_down_button, "remove_button": remove_button,
-        "clear_submission_button": clear_submission_button, "query_id_input": query_id_input,
-        "submission_button": submission_button, "submission_file_output": submission_file_output,
-    }
+        # Gom tất cả components vào một dictionary
+        components = {
+            # States
+            "response_state": response_state, "gallery_items_state": gallery_items_state,
+            "current_page_state": current_page_state, "submission_list_state": submission_list_state,
+            "selected_candidate_for_submission": selected_candidate_for_submission,
+            # Cột Trái - Inputs & Controls
+            "query_input": query_input, "search_button": search_button, "num_results": num_results,
+            "clear_button": clear_button, "kis_retrieval_slider": kis_retrieval_slider,
+            "vqa_retrieval_slider": vqa_retrieval_slider, "vqa_candidates_slider": vqa_candidates_slider,
+            "trake_candidates_per_step_slider": trake_candidates_per_step_slider,
+            "trake_max_sequences_slider": trake_max_sequences_slider, "w_clip_slider": w_clip_slider,
+            "w_obj_slider": w_obj_slider, "w_semantic_slider": w_semantic_slider, "lambda_mmr_slider": lambda_mmr_slider,
+            # Cột Trái - Outputs & Display
+            "status_output": status_output, "gemini_analysis": gemini_analysis, "stats_info": stats_info,
+            "prev_page_button": prev_page_button, "page_info_display": page_info_display,
+            "next_page_button": next_page_button, "results_gallery": results_gallery,
+            # Cột Phải - Trạm Phân tích
+            "selected_image_display": selected_image_display, "video_player": video_player,
+            "detailed_info": detailed_info, "scores_display": scores_display,
+            "vqa_answer_display": vqa_answer_display, "transcript_display": transcript_display, "clip_info": clip_info,
+            # Cột Phải - Vùng Nộp bài
+            "add_top_button": add_top_button, "add_bottom_button": add_bottom_button,
+            "submission_list_display": submission_list_display, "submission_list_selector": submission_list_selector,
+            "move_up_button": move_up_button, "move_down_button": move_down_button, "remove_button": remove_button,
+            "clear_submission_button": clear_submission_button, "query_id_input": query_id_input,
+            "submission_button": submission_button, "submission_file_output": submission_file_output,
+        }
 
-    return app, components
+        # === KEY CHANGE 2: Gọi hàm kết nối sự kiện được truyền vào, ngay bên trong context "with" ===
+        connect_events_fn(components)
+
+    # Hàm bây giờ chỉ trả về đối tượng app
+    return app

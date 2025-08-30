@@ -1,6 +1,9 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, Optional
 import os
 import json
+
+import tqdm
 import google.generativeai as genai # Vẫn cần cho type hinting nếu dùng Gemini
 from google.api_core import exceptions as google_exceptions
 

@@ -58,49 +58,30 @@ class OpenAIHandler:
 
     def _preprocess_and_encode_image(
         self, 
-        image_path: str, 
-        resize_threshold_mb: float = 1.0, # Chỉ resize nếu ảnh lớn hơn 1MB
-        max_dimension: int = 2048, # Giới hạn kích thước tối đa mới, lớn hơn
-        quality: int = 95 # Tăng chất lượng nén
+        image_path: str,
+        quality: int = 95 # Vẫn có thể nén nhẹ để giảm payload mà không ảnh hưởng chi tiết
     ) -> str:
         """
-        Tiền xử lý ảnh MỘT CÁCH THÔNG MINH và mã hóa sang Base64.
-        Nó chỉ resize và nén lại nếu kích thước file gốc vượt quá ngưỡng.
+        Chuẩn hóa định dạng ảnh (sang RGB) và mã hóa sang Base64.
+        *** KHÔNG THAY ĐỔI KÍCH THƯỚC ẢNH ***
         """
         try:
-            # --- Bước 1: Kiểm tra kích thước file gốc ---
-            file_size_mb = os.path.getsize(image_path) / (1024 * 1024)
+            with Image.open(image_path) as img:
+                
+                # BƯỚC QUAN TRỌNG NHẤT: Đảm bảo ảnh ở định dạng RGB.
+                # Thao tác này sẽ loại bỏ kênh Alpha (RGBA) hoặc chuyển đổi từ CMYK.
+                if img.mode != 'RGB':
+                    print(f"   -> Chuẩn hóa ảnh '{os.path.basename(image_path)}' từ mode '{img.mode}' sang 'RGB'.")
+                    img = img.convert('RGB')
 
-            # --- Bước 2: Xử lý ---
-            # KỊCH BẢN 1: Ảnh đủ nhỏ và an toàn -> Gửi đi nguyên bản
-            if file_size_mb <= resize_threshold_mb:
-                print(f"   -> Ảnh '{os.path.basename(image_path)}' ({file_size_mb:.2f}MB) đủ nhỏ, gửi nguyên bản.")
-                with open(image_path, "rb") as image_file:
-                    return base64.b64encode(image_file.read()).decode('utf-8')
-
-            # KỊCH BẢN 2: Ảnh quá lớn -> Cần tiền xử lý
-            else:
-                print(f"   -> ⚠️ Ảnh '{os.path.basename(image_path)}' ({file_size_mb:.2f}MB) quá lớn. Bắt đầu tiền xử lý...")
-                with Image.open(image_path) as img:
-                    # Chuẩn hóa sang RGB (vẫn cần thiết)
-                    if img.mode != 'RGB':
-                        img = img.convert('RGB')
-                    
-                    # Resize một cách thận trọng hơn
-                    # Giữ lại nhiều chi tiết hơn bằng cách dùng max_dimension lớn hơn
-                    if max(img.width, img.height) > max_dimension:
-                        img.thumbnail((max_dimension, max_dimension))
-                        print(f"      -> Resized xuống còn {img.size[0]}x{img.size[1]}px.")
-
-                    # Nén với chất lượng cao hơn
-                    buffer = io.BytesIO()
-                    img.save(buffer, format="JPEG", quality=quality)
-                    img_bytes = buffer.getvalue()
-                    
-                    new_size_mb = len(img_bytes) / (1024 * 1024)
-                    print(f"      -> Nén xong. Kích thước mới: {new_size_mb:.2f}MB.")
-                    
-                    return base64.b64encode(img_bytes).decode('utf-8')
+                # Lưu ảnh vào bộ nhớ đệm (in-memory buffer) để lấy chuỗi bytes.
+                # Việc này cũng giúp chuẩn hóa lại định dạng nén JPEG.
+                buffer = io.BytesIO()
+                img.save(buffer, format="JPEG", quality=quality)
+                img_bytes = buffer.getvalue()
+                
+                # Cuối cùng, mã hóa Base64
+                return base64.b64encode(img_bytes).decode('utf-8')
 
         except FileNotFoundError:
             print(f"--- ⚠️ Lỗi khi xử lý ảnh: File không tồn tại tại '{image_path}' ---")

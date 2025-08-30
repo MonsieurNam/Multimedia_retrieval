@@ -9,12 +9,12 @@ class MMRResultBuilder:
     Xây dựng lại danh sách kết quả cuối cùng bằng thuật toán Maximal Marginal Relevance (MMR)
     để tăng cường sự đa dạng.
     """
-    def __init__(self, clip_features: np.ndarray, device: str = "cuda"):
+    def __init__(self, clip_features_tensor: np.ndarray, device: str = "cuda"):
         """
         Khởi tạo MMRResultBuilder.
 
         Args:
-            clip_features (np.ndarray): Ma trận NumPy chứa tất cả các vector CLIP đã được nạp sẵn.
+            clip_features_tensor (np.ndarray): Ma trận NumPy chứa tất cả các vector CLIP đã được nạp sẵn.
             device (str): Thiết bị để chạy tính toán (cuda hoặc cpu).
         """
         print("--- 🎨 Khởi tạo MMR Result Builder (Diversity Engine) ---")
@@ -24,15 +24,15 @@ class MMRResultBuilder:
             
             # --- BƯỚC SỬA LỖI ---
             # 1. Đảm bảo ma trận là C-contiguous và có kiểu float32
-            features_copy = np.ascontiguousarray(clip_features.astype('float32'))
+            features_copy = np.ascontiguousarray(clip_features_tensor.astype('float32'))
             
             # 2. Chuẩn hóa L2 trên NumPy float32
             faiss.normalize_L2(features_copy)
             
             # 3. Chuyển sang tensor
-            self.clip_features_tensor = torch.from_numpy(features_copy).to(self.device)
+            self.clip_features_tensor_tensor = torch.from_numpy(features_copy).to(self.device)
 
-            print(f"--- ✅ Chuyển đổi thành công {self.clip_features_tensor.shape[0]} vector CLIP. ---")
+            print(f"--- ✅ Chuyển đổi thành công {self.clip_features_tensor_tensor.shape[0]} vector CLIP. ---")
         except Exception as e:
             print(f"--- ❌ Lỗi nghiêm trọng khi xử lý vector CLIP: {e}. MMR sẽ bị vô hiệu hóa. ---")
             # In ra traceback để debug dễ hơn
@@ -44,14 +44,14 @@ class MMRResultBuilder:
         """
         Tính toán độ tương đồng kết hợp giữa hai ứng viên.
         """
-        if self.clip_features is None:
+        if self.clip_features_tensor is None:
             return 0.0
 
         # --- 1. Visual Similarity ---
         idx_A = cand_A['original_index'] # Cần thêm 'original_index' vào metadata
         idx_B = cand_B['original_index']
-        vec_A = self.clip_features[idx_A]
-        vec_B = self.clip_features[idx_B]
+        vec_A = self.clip_features_tensor[idx_A]
+        vec_B = self.clip_features_tensor[idx_B]
         visual_sim = util.pytorch_cos_sim(vec_A, vec_B).item()
         
         # --- 2. Temporal Similarity ---
@@ -73,7 +73,7 @@ class MMRResultBuilder:
         """
         Xây dựng danh sách kết quả đa dạng bằng thuật toán MMR.
         """
-        if not candidates or self.clip_features is None:
+        if not candidates or self.clip_features_tensor is None:
             return candidates[:target_size]
 
         print(f"--- Bắt đầu xây dựng danh sách đa dạng bằng MMR (λ={lambda_val}) ---")

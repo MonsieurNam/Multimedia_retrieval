@@ -911,7 +911,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                 elem_id="results-gallery",
                 columns=5, # Giữ nguyên mật độ cao
                 object_fit="contain",
-                height=580, # Chiều cao cố định, không cần cuộn
+                height=700, # Chiều cao cố định, không cần cuộn
                 allow_preview=False
             )
 

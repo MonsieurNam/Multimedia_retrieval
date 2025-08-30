@@ -152,7 +152,13 @@ def perform_search(query_text: str,
     start_time = time.time()
     
     full_response = master_searcher.search(query=query_text, config=config)
-    
+    print("\n" + "="*20 + " DEBUG LOG: GRADIO RECEIVES RESPONSE " + "="*20)
+    print(f"-> Task Type nhận được: {full_response.get('task_type')}")
+    results_received = full_response.get('results', [])
+    print(f"-> Số lượng kết quả nhận được: {len(results_received)}")
+    if results_received:
+        print(f"-> Cấu trúc kết quả đầu tiên: {list(results_received[0].keys())}")
+    print("="*70 + "\n")
     search_time = time.time() - start_time
     
     formatted_gallery = format_results_for_gallery(full_response)

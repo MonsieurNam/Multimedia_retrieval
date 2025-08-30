@@ -85,7 +85,10 @@ def create_mock_video_segment(video_path, timestamp):
     return '/kaggle/input/aic-2024-public-test-data-2nd/videos/L01_V001.mp4'
 
 def perform_search(query_text: str):
-    # (Hàm này giữ nguyên logic từ GĐ1)
+    """
+    Hàm xử lý sự kiện chính: gọi backend và đổ dữ liệu vào các State.
+    *** PHIÊN BẢN SỬA LỖI: Đảm bảo trả về đúng 6 giá trị. ***
+    """
     response = mock_master_searcher.search(query_text)
     task_type = response['task_type']
     query_analysis = response['query_analysis']
@@ -93,13 +96,36 @@ def perform_search(query_text: str):
     trake_step_candidates = response['trake_step_candidates']
     analysis_summary = (f"<b>Loại nhiệm vụ:</b> {task_type.value}<br>"
                       f"<b>Bối cảnh tìm kiếm:</b> {query_analysis.get('search_context', 'N/A')}")
+
     if task_type == MockTaskType.TRAKE:
-        return (analysis_summary, response, pd.DataFrame(), trake_step_candidates,
-                f"Đã tìm thấy ứng viên cho {len(trake_step_candidates)} bước TRAKE")
-    else:
-        # TRẢ VỀ THÊM DataFrame để cập nhật State
-        return (analysis_summary, response, kis_qna_candidates, [],
-                f"Đã tìm thấy {len(kis_qna_candidates)} ứng viên KIS/QNA", kis_qna_candidates)
+        status_msg = f"Đã tìm thấy ứng viên cho {len(trake_step_candidates)} bước TRAKE. Bắt đầu lắp ráp chuỗi."
+        
+        # =======================================================
+        # === SỬA LỖI TẠI ĐÂY ===
+        # Thêm pd.DataFrame() vào cuối để khớp với 6 outputs
+        # =======================================================
+        return (
+            analysis_summary,           # 1. analysis_summary_output
+            response,                   # 2. full_response_state
+            pd.DataFrame(),             # 3. kis_qna_table (xóa trắng)
+            trake_step_candidates,      # 4. trake_steps_state
+            status_msg,                 # 5. status_kis_qna
+            pd.DataFrame()              # 6. kis_qna_df_state (xóa trắng)
+        )
+        # =======================================================
+
+    else: # KIS hoặc QNA
+        status_msg = f"Đã tìm thấy {len(kis_qna_candidates)} ứng viên KIS/QNA"
+        
+        # Nhánh này đã đúng 6 giá trị, giữ nguyên
+        return (
+            analysis_summary,           # 1. analysis_summary_output
+            response,                   # 2. full_response_state
+            kis_qna_candidates,         # 3. kis_qna_table
+            [],                         # 4. trake_steps_state (xóa trắng)
+            status_msg,                 # 5. status_kis_qna
+            kis_qna_candidates          # 6. kis_qna_df_state
+        )
 
 def on_kis_qna_select(kis_qna_df: pd.DataFrame, evt: gr.SelectData):
     """

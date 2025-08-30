@@ -22,16 +22,24 @@ class MMRResultBuilder:
         try:
             print(f"   -> Đang chuyển ma trận vector CLIP sang tensor trên {self.device}...")
             
-            # Chuẩn hóa L2 trên NumPy trước khi chuyển sang tensor
-            # Sao chép để tránh thay đổi mảng gốc trong basic_searcher
-            features_copy = clip_features.copy()
+            # --- BƯỚC SỬA LỖI ---
+            # 1. Đảm bảo ma trận là C-contiguous và có kiểu float32
+            features_copy = np.ascontiguousarray(clip_features.astype('float32'))
+            
+            # 2. Chuẩn hóa L2 trên NumPy float32
             faiss.normalize_L2(features_copy)
+            
+            # 3. Chuyển sang tensor
             self.clip_features_tensor = torch.from_numpy(features_copy).to(self.device)
 
             print(f"--- ✅ Chuyển đổi thành công {self.clip_features_tensor.shape[0]} vector CLIP. ---")
         except Exception as e:
             print(f"--- ❌ Lỗi nghiêm trọng khi xử lý vector CLIP: {e}. MMR sẽ bị vô hiệu hóa. ---")
+            # In ra traceback để debug dễ hơn
+            import traceback
+            traceback.print_exc()
             self.clip_features_tensor = None
+            
     def _calculate_similarity(self, cand_A: Dict, cand_B: Dict, w_visual: float = 0.8, w_time: float = 0.2) -> float:
         """
         Tính toán độ tương đồng kết hợp giữa hai ứng viên.

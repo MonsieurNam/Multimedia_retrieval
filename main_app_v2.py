@@ -149,10 +149,12 @@ def update_kis_qna_view(kis_qna_df: pd.DataFrame, sort_by: str, filter_video: st
 def add_to_submission_list(submission_list: pd.DataFrame, kis_qna_df: pd.DataFrame, evt: gr.SelectData):
     """
     Thêm hàng đang được chọn vào danh sách nộp bài.
+    *** PHIÊN BẢN CẬP NHẬT: Trả về thêm giá trị để xóa lựa chọn (deselect). ***
     """
     if evt.index is None or kis_qna_df.empty:
         gr.Warning("Chưa có ứng viên nào được chọn!")
-        return submission_list
+        # Trả về danh sách gốc và không thay đổi lựa chọn
+        return submission_list, None
 
     selected_row_index = evt.index[0]
     selected_row = kis_qna_df.iloc[[selected_row_index]] # Lấy dưới dạng DataFrame
@@ -164,7 +166,10 @@ def add_to_submission_list(submission_list: pd.DataFrame, kis_qna_df: pd.DataFra
     updated_list = pd.concat([submission_list, selected_row]).reset_index(drop=True)
     gr.Info(f"Đã thêm {selected_row['keyframe_id'].iloc[0]} vào danh sách nộp bài!")
     
-    return updated_list
+    # **THAY ĐỔI QUAN TRỌNG**: Trả về 2 giá trị:
+    # 1. DataFrame đã cập nhật cho submission_list_table.
+    # 2. `None` để xóa lựa chọn trong kis_qna_table.
+    return updated_list, None
 
 # ==============================================================================
 # === BẮT ĐẦU PHẦN GIAO DIỆN GRADIO - PHIÊN BẢN NÂNG CẤP GĐ2 ===
@@ -276,10 +281,13 @@ with gr.Blocks(theme=gr.themes.Soft(), title="AIC25 Battle Station v2") as app:
     # 4. Sự kiện bấm nút "Thêm vào Danh sách Nộp bài"
     add_to_submission_button.click(
         fn=add_to_submission_list,
-        inputs=[submission_list_state, kis_qna_table], # Truyền vào list hiện tại và bảng đang hiển thị
-        outputs=[submission_list_table] # Cập nhật bảng danh sách nộp bài
-    # `_js` và `evt: gr.SelectData` được Gradio xử lý tự động
-    ).then(None, _js="(evt_data) => { return null }", inputs=None, outputs=[kis_qna_table])
+        inputs=[submission_list_state, kis_qna_table],
+        # **THAY ĐỔI QUAN TRỌNG**: Output giờ là một list gồm 2 component
+        outputs=[
+            submission_list_table, # Cập nhật bảng danh sách nộp bài
+            kis_qna_table          # Truyền `None` vào đây để xóa lựa chọn
+        ]
+    )
 
 if __name__ == "__main__":
     app.launch(debug=True, share=True)

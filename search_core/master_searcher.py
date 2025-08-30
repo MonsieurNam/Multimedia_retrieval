@@ -13,8 +13,8 @@ from search_core.trake_solver import TRAKESolver
 from search_core.gemini_text_handler import GeminiTextHandler
 from search_core.openai_handler import OpenAIHandler
 from search_core.task_analyzer import TaskType
-# Giả sử chúng ta sẽ tạo file này ở bước tiếp theo
-# from search_core.mmr_builder import MMRResultBuilder 
+from search_core.mmr_builder import MMRResultBuilder 
+
 
 class MasterSearcher:
     """
@@ -27,18 +27,28 @@ class MasterSearcher:
                  basic_searcher: BasicSearcher, 
                  gemini_api_key: Optional[str] = None,
                  openai_api_key: Optional[str] = None,
-                 entities_path: str = None):
+                 entities_path: str = None,
+                clip_features_path: str = None): 
         """
         Khởi tạo MasterSearcher và hệ sinh thái AI lai.
         """
         print("--- 🧠 Khởi tạo Master Searcher (Hybrid AI Edition) ---")
         
         self.semantic_searcher = SemanticSearcher(basic_searcher=basic_searcher)
-        
+        self.mmr_builder: Optional[MMRResultBuilder] = None
+        if clip_features_path and os.path.exists(clip_features_path):
+            try:
+                all_clip_features = basic_searcher.get_all_clip_features() 
+                self.mmr_builder = MMRResultBuilder(clip_features=all_clip_features)
+            except Exception as e:
+                 print(f"--- ⚠️ Lỗi khi khởi tạo MMR Builder: {e}. MMR sẽ bị vô hiệu hóa. ---")
+        else:
+            print("--- ⚠️ Không tìm thấy file CLIP features, MMR sẽ không hoạt động. ---")
+
+        print(f"--- ✅ Master Searcher đã sẵn sàng! (AI Enabled: {self.ai_enabled}) ---")
         self.gemini_handler: Optional[GeminiTextHandler] = None
         self.openai_handler: Optional[OpenAIHandler] = None
         self.trake_solver: Optional[TRAKESolver] = None
-        # self.mmr_builder = MMRResultBuilder(basic_searcher.model) # Sẽ được kích hoạt ở module 1.4
         self.ai_enabled = False
         self.known_entities: set = set()
         
@@ -93,6 +103,7 @@ class MasterSearcher:
         w_clip = config.get('w_clip', 0.4)
         w_obj = config.get('w_obj', 0.3)
         w_semantic = config.get('w_semantic', 0.3)
+        lambda_mmr = config.get('lambda_mmr', 0.7)
 
         # --- Bước 2: Phân tích Truy vấn ---
         query_analysis = {}
@@ -193,14 +204,21 @@ class MasterSearcher:
                 top_k_final=kis_retrieval, 
                 top_k_retrieval=kis_retrieval
             )
-
-        # --- Bước 4 (Sẽ thêm sau): Gọi MMR Builder ---
-        # diverse_results = self.mmr_builder.build_diverse_list(final_results, ...)
-        # final_results = diverse_results[:top_k_final]
+        # --- BƯỚC 4: ÁP DỤNG MMR ĐỂ TĂNG CƯỜNG ĐA DẠNG ---
+        diverse_results = final_results
+        if self.mmr_builder and final_results:
+            # Lưu ý quan trọng: TRAKE trả về danh sách các chuỗi, không phải các frame đơn lẻ.
+            # MMR chỉ nên áp dụng cho KIS và QNA.
+            if task_type in [TaskType.KIS, TaskType.QNA]:
+                diverse_results = self.mmr_builder.build_diverse_list(
+                    candidates=final_results, 
+                    target_size=len(final_results), # MMR sẽ sắp xếp lại toàn bộ list
+                    lambda_val=lambda_mmr
+                )
 
         # Tạm thời chỉ cắt bớt
-        final_results = final_results[:top_k_final]
-        
+        final_results_for_submission = diverse_results[:top_k_final]
+
         # *** LOG DEBUG ĐIỂM A ***
         print("\n" + "="*20 + " DEBUG LOG: MASTER SEARCHER OUTPUT " + "="*20)
         print(f"-> Task Type cuối cùng: {task_type.value}")
@@ -223,6 +241,6 @@ class MasterSearcher:
         
         return {
             "task_type": task_type,
-            "results": final_results,
+            "results": final_results_for_submission,
             "query_analysis": query_analysis
         }

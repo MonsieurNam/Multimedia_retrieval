@@ -144,6 +144,7 @@ class MasterSearcher:
                 final_results = self.trake_solver.find_sequences(
                     sub_queries, 
                     self.semantic_searcher, 
+                    original_query_analysis=query_analysis,
                     top_k_per_step=trake_candidates_per_step,
                     max_sequences=trake_max_sequences
                 )

@@ -37,7 +37,8 @@ class TRAKESolver:
 
     def find_sequences(self, 
                        sub_queries: List[str], 
-                       searcher: 'SemanticSearcher', 
+                       searcher: 'SemanticSearcher',
+                       original_query_analysis: Dict[str, Any], # <-- THÊM THAM SỐ NÀY
                        top_k_per_step: int, 
                        max_sequences: int,
                        beam_width: int = 5 # Thêm tham số beam_width
@@ -57,6 +58,9 @@ class TRAKESolver:
             
             # Logic gọi AI handler và searcher giữ nguyên
             sub_query_analysis = self.ai_handler.analyze_query_fully(sub_query)
+            sub_query_analysis['w_clip'] = original_query_analysis.get('w_clip')
+            sub_query_analysis['w_obj'] = original_query_analysis.get('w_obj')
+            sub_query_analysis['w_semantic'] = original_query_analysis.get('w_semantic')
             search_context = sub_query_analysis.get('search_context', sub_query)
             
             results = searcher.search(

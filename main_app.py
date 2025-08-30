@@ -834,11 +834,22 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     ]
     search_outputs = [
         results_gallery, status_output, response_state, gemini_analysis, stats_info,
-        gallery_items_state, selected_indices_state, selected_count_md, selected_preview
+        gallery_items_state, selected_indices_state, selected_count_md, selected_preview,  current_page_state, page_info_display 
     ]
     search_button.click(fn=perform_search, inputs=search_inputs, outputs=search_outputs)
     query_input.submit(fn=perform_search, inputs=search_inputs, outputs=search_outputs)
 
+    prev_page_button.click(
+        fn=update_gallery_page,
+        inputs=[gallery_items_state, current_page_state, gr.Textbox("◀️ Trang trước", visible=False)],
+        outputs=[results_gallery, current_page_state, page_info_display]
+    )
+    
+    next_page_button.click(
+        fn=update_gallery_page,
+        inputs=[gallery_items_state, current_page_state, gr.Textbox("▶️ Trang sau", visible=False)],
+        outputs=[results_gallery, current_page_state, page_info_display]
+    )
     # 2. Sự kiện Lựa chọn trong Gallery chính
     results_gallery.select(
         fn=on_gallery_select,

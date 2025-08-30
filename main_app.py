@@ -116,6 +116,34 @@ master_searcher = initialize_backend()
 
 print("--- Giai đoạn 3/4: Đang định nghĩa các hàm logic cho giao diện...")
 
+ITEMS_PER_PAGE = 20 # 5 cột x 4 hàng
+
+def update_gallery_page(gallery_items, current_page, direction):
+    """
+    Cập nhật trang hiển thị của gallery.
+    """
+    if not gallery_items:
+        return [], 1, "Trang 1 / 1"
+
+    total_items = len(gallery_items)
+    # Tính tổng số trang, đảm bảo ít nhất là 1 trang
+    total_pages = int(np.ceil(total_items / ITEMS_PER_PAGE)) or 1
+    
+    new_page = current_page
+    if direction == "▶️ Trang sau":
+        new_page = min(total_pages, current_page + 1)
+    elif direction == "◀️ Trang trước":
+        new_page = max(1, current_page - 1)
+
+    # Tính toán index để cắt danh sách
+    start_index = (new_page - 1) * ITEMS_PER_PAGE
+    end_index = start_index + ITEMS_PER_PAGE
+    
+    new_gallery_view = gallery_items[start_index:end_index]
+    
+    page_info = f"Trang {new_page} / {total_pages}"
+    
+    return new_gallery_view, new_page, page_info
 
 def perform_search(
     # --- Inputs từ UI ---
@@ -168,7 +196,6 @@ def perform_search(
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="animation: spin 1s linear infinite;"><path d="M12 2V6" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 18V22" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.93 4.93L7.76 7.76" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.24 16.24L19.07 19.07" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 12H6" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 12H22" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.93 19.07L7.76 16.24" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.24 7.76L19.07 4.93" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span style="font-weight: 500; color: #4338ca;">Đang xử lý... AI đang phân tích và tìm kiếm. Quá trình này có thể mất một chút thời gian.</span>
     </div>
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     """
     
     # Yield để cập nhật UI, trả về đúng 9 giá trị
@@ -243,30 +270,25 @@ def perform_search(
         </div>
     </div>
     """
-    # ==============================================================================
-    # === BƯỚC 5: DEBUG LOG CUỐI CÙNG TRƯỚC KHI RETURN ==========================
-    # ==============================================================================
-    print("\n" + "="*20 + " DEBUG LOG: FINAL RETURN VALUES " + "="*20)
-    print(f"-> gallery_paths (số lượng): {len(gallery_paths)}")
-    if gallery_paths:
-        print(f"  -> Ví dụ gallery_path đầu tiên: {gallery_paths[0]}")
-    print(f"-> status_msg (kiểu): {type(status_msg)}")
-    print(f"  -> Nội dung status_msg: {status_msg[:200]}") # In 200 ký tự đầu
-    print(f"-> response_state có tồn tại không? {'Có' if response_state is not None else 'Không'}")
-    if response_state:
-        print(f"  -> response_state['results'] (số lượng): {len(response_state.get('results', []))}")
-    print("="*66 + "\n")
+    initial_gallery_view = gallery_paths[:ITEMS_PER_PAGE]
+    
+    # Reset page state về trang 1 (index 0)
+    current_page = 1
+    total_pages = int(np.ceil(len(gallery_paths) / ITEMS_PER_PAGE)) or 1
+    page_info = f"Trang {current_page} / {total_pages}"
     
     yield (
-        gallery_paths,          # 1. results_gallery
+        initial_gallery_view,   # 1. results_gallery (chỉ 20 ảnh đầu)
         status_msg,             # 2. status_output
-        response_state,         # 3. response_state
+        response_state,         # 3. response_state (lưu toàn bộ 100 kết quả)
         analysis_html,          # 4. gemini_analysis
         stats_info_html,        # 5. stats_info
-        gallery_paths,          # 6. gallery_items_state
+        gallery_paths,          # 6. gallery_items_state (lưu toàn bộ 100 đường dẫn)
         [],                     # 7. selected_indices_state (reset)
         "Đã chọn: 0",           # 8. selected_count_md (reset)
-        []                      # 9. selected_preview (reset)
+        [],                     # 9. selected_preview (reset)
+        current_page,           # 10. current_page_state (reset về 1)
+        page_info               # 11. page_info_display
     )
 
 
@@ -673,6 +695,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
     response_state = gr.State()
     gallery_items_state = gr.State([])
     selected_indices_state = gr.State([])
+    current_page_state = gr.State(1) 
 
     # --- BỐ CỤC CHÍNH 2 CỘT ---
     with gr.Row(variant='panel'):
@@ -745,7 +768,24 @@ with gr.Blocks(theme=gr.themes.Soft(), css=custom_css, title="🚀 AIC25 Video S
                             step=0.05, 
                             label="λ - MMR (0.0=Đa dạng nhất, 1.0=Liên quan nhất)"
                         )
+             # --- 4. Khu vực Kết quả chính (THÊM CÁC NÚT PHÂN TRANG) ---
+            gr.Markdown("### 2. Kết quả tìm kiếm")
+            
+            # --- THÊM MỚI: Bảng điều khiển phân trang ---
+            with gr.Row(equal_height=True, variant='compact'):
+                prev_page_button = gr.Button("◀️ Trang trước")
+                page_info_display = gr.Markdown("Trang 1 / 1", elem_id="page-info")
+                next_page_button = gr.Button("▶️ Trang sau")
 
+            results_gallery = gr.Gallery(
+                label="Click vào một ảnh để phân tích sâu",
+                show_label=True,
+                elem_id="results-gallery",
+                columns=10, # Giữ nguyên mật độ cao
+                object_fit="contain",
+                height=580, # Chiều cao cố định, không cần cuộn
+                allow_preview=False
+            )
             # --- 3. Khu vực Trạng thái & Phân tích ---
             status_output = gr.HTML()
             with gr.Row():

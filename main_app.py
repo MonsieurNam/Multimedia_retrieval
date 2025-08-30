@@ -116,7 +116,6 @@ master_searcher = initialize_backend()
 
 print("--- Giai đoạn 3/4: Đang định nghĩa các hàm logic cho giao diện...")
 
-# main_app.py
 
 def perform_search(
     # --- Inputs từ UI ---
@@ -135,30 +134,35 @@ def perform_search(
     """
     Hàm chính xử lý sự kiện tìm kiếm, phiên bản hoàn thiện và bền bỉ.
     Nó điều phối việc gọi backend, xử lý lỗi, định dạng kết quả, và cập nhật toàn bộ UI.
-    *** PHIÊN BẢN FULL FIXED - SẴN SÀNG CHO MODULE 2.2 ***
+    *** PHIÊN BẢN FULL FIXED (UnboundLocalError & ValueError) ***
     """
     
     # ==============================================================================
     # === BƯỚC 1: KHỞI TẠO BIẾN & VALIDATE INPUT =================================
     # ==============================================================================
     
-    # Khởi tạo tất cả các biến output với giá trị mặc định (rỗng)
+    # Khởi tạo tất cả 9 biến output với giá trị mặc định (rỗng)
     gallery_paths = []
+    status_msg = ""
     response_state = None
-    status_output = ""
     analysis_html = ""
+    stats_info_html = ""
+    gallery_items_state = []
+    selected_indices_state = []
+    selected_count_md = "Đã chọn: 0"
+    selected_preview = []
 
     if not query_text.strip():
         gr.Warning("Vui lòng nhập truy vấn tìm kiếm!")
-        status_output = "<div style='color: orange;'>⚠️ Vui lòng nhập truy vấn và bấm Tìm kiếm.</div>"
-        # Trả về các giá trị đã khởi tạo
-        return gallery_paths, response_state, status_output, analysis_html
+        status_msg = "<div style='color: orange;'>⚠️ Vui lòng nhập truy vấn và bấm Tìm kiếm.</div>"
+        # Trả về tuple 9 giá trị
+        return (gallery_paths, status_msg, response_state, analysis_html, stats_info_html, 
+                gallery_items_state, selected_indices_state, selected_count_md, selected_preview)
 
     # ==============================================================================
     # === BƯỚC 2: YIELD TRẠNG THÁI "ĐANG XỬ LÝ" ===================================
     # ==============================================================================
     
-    # Thông báo cho người dùng rằng hệ thống đang làm việc
     status_update = """
     <div style="display: flex; align-items: center; gap: 15px; padding: 10px; background-color: #e0e7ff; border-radius: 8px;">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="animation: spin 1s linear infinite;"><path d="M12 2V6" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 18V22" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.93 4.93L7.76 7.76" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.24 16.24L19.07 19.07" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 12H6" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 12H22" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.93 19.07L7.76 16.24" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.24 7.76L19.07 4.93" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -167,8 +171,9 @@ def perform_search(
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     """
     
-    # Yield để cập nhật status_output, các biến khác vẫn giữ giá trị rỗng ban đầu.
-    yield gallery_paths, response_state, status_update, analysis_html
+    # Yield để cập nhật UI, trả về đúng 9 giá trị
+    yield (gallery_paths, status_update, response_state, analysis_html, stats_info_html, 
+           gallery_items_state, selected_indices_state, selected_count_md, selected_preview)
     
     # ==============================================================================
     # === BƯỚC 3: GỌI BACKEND & XỬ LÝ LỖI ========================================
@@ -190,38 +195,33 @@ def perform_search(
         }
         
         start_time = time.time()
-        
-        # Lệnh gọi cốt lõi tới MasterSearcher
         full_response = master_searcher.search(query=query_text, config=config)
-        
         search_time = time.time() - start_time
 
     except Exception as e:
         print(f"--- ❌ LỖI NGHIÊM TRỌNG TRONG PIPELINE TÌM KIẾM: {e} ---")
         import traceback
         traceback.print_exc()
-        status_output = f"<div style='color: red;'>🔥 Đã xảy ra lỗi nghiêm trọng trong backend: {e}</div>"
+        status_msg = f"<div style='color: red;'>🔥 Đã xảy ra lỗi backend: {e}</div>"
         # Trả về trạng thái lỗi và các giá trị rỗng
-        return gallery_paths, response_state, status_output, analysis_html
+        return (gallery_paths, status_msg, response_state, analysis_html, stats_info_html, 
+                gallery_items_state, selected_indices_state, selected_count_md, selected_preview)
 
     # ==============================================================================
     # === BƯỚC 4: ĐỊNH DẠNG KẾT QUẢ & CẬP NHẬT UI CUỐI CÙNG ======================
     # ==============================================================================
 
-    # Gán giá trị mới cho các biến đã khởi tạo
     gallery_paths = format_results_for_mute_gallery(full_response)
-    response_state = full_response # Lưu lại toàn bộ response để các hàm khác sử dụng
+    response_state = full_response
     
-    # Tạo thông báo trạng thái cuối cùng
     task_type_msg = full_response.get('task_type', TaskType.KIS).value
     num_found = len(gallery_paths)
     
     if num_found == 0:
-        status_output = f"<div style='color: #d97706;'>😔 **{task_type_msg}** | Không tìm thấy kết quả nào trong {search_time:.2f} giây.</div>"
+        status_msg = f"<div style='color: #d97706;'>😔 **{task_type_msg}** | Không tìm thấy kết quả nào trong {search_time:.2f} giây.</div>"
     else:
-        status_output = f"<div style='color: #166534;'>✅ **{task_type_msg}** | Tìm thấy {num_found} kết quả trong {search_time:.2f} giây.</div>"
+        status_msg = f"<div style='color: #166534;'>✅ **{task_type_msg}** | Tìm thấy {num_found} kết quả trong {search_time:.2f} giây.</div>"
 
-    # Tạo HTML phân tích truy vấn
     query_analysis = full_response.get('query_analysis', {})
     analysis_html = f"""
     <div style="background-color: #f3f4f6; border-radius: 8px; padding: 15px;">
@@ -233,9 +233,29 @@ def perform_search(
         </div>
     </div>
     """
+
+    stats_info_html = f"""
+    <div style="background-color: #f3f4f6; border-radius: 8px; padding: 15px;">
+        <h4 style="margin: 0 0 10px 0; color: #111827;">📊 Thống kê Nhanh</h4>
+        <div style="font-size: 14px; line-height: 1.6;">
+            <strong>Thời gian:</strong> {search_time:.2f} giây<br>
+            <strong>Kết quả:</strong> {num_found}
+        </div>
+    </div>
+    """
     
-    # Trả về (hoặc yield) bộ giá trị cuối cùng để cập nhật toàn bộ UI
-    return gallery_paths, response_state, status_output, analysis_html
+    # Trả về một tuple chứa đúng 9 giá trị
+    return (
+        gallery_paths,          # 1. results_gallery
+        status_msg,             # 2. status_output
+        response_state,         # 3. response_state
+        analysis_html,          # 4. gemini_analysis
+        stats_info_html,        # 5. stats_info
+        gallery_paths,          # 6. gallery_items_state (lưu lại đường dẫn ảnh)
+        [],                     # 7. selected_indices_state (reset)
+        "Đã chọn: 0",           # 8. selected_count_md (reset)
+        []                      # 9. selected_preview (reset)
+    )
 
 
 def _create_detailed_info_html(result: Dict[str, Any], task_type: TaskType) -> str:
